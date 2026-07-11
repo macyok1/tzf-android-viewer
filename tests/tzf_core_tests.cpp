@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <iostream>
 #include <string>
 #include <cmath>
 #include <vector>
@@ -145,6 +146,14 @@ int main() {
     registrationOptions.minimumOverlap = 0.5;
     const auto registration = tzf::registerConstrained(
         reference, moving, {0.10, -0.04, 0.02, 4.0}, registrationOptions);
+    if (!registration.accepted) {
+        std::cerr << "registration rejected: " << registration.reason
+                  << " rms=" << registration.rms << " p95=" << registration.p95
+                  << " overlap=" << registration.overlap << " transform="
+                  << registration.transform[0] << ',' << registration.transform[1]
+                  << ',' << registration.transform[2] << ',' << registration.transform[3]
+                  << '\n';
+    }
     assert(registration.accepted);
     assert(std::abs(registration.transform[0] - 0.15) < 0.02);
     assert(std::abs(registration.transform[1] + 0.08) < 0.02);
