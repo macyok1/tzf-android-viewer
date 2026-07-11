@@ -22,9 +22,9 @@ public final class OrientationCubeView extends View {
 
     private static final float EDGE_ZONE = .22f;
     private static final int[][] FACE_DATA = {
-            { 1,0,0,  0,0,-1, 0,1,0}, {-1,0,0,  0,0,1, 0,1,0},
-            {0, 1,0,  1,0,0, 0,0,-1}, {0,-1,0,  1,0,0, 0,0,1},
-            {0,0, 1,  1,0,0, 0,1,0}, {0,0,-1, -1,0,0, 0,1,0}
+            { 1,0,0,  0,-1,0, 0,0,1}, {-1,0,0,  0,1,0, 0,0,1},
+            {0,0, 1,  1,0,0, 0,1,0}, {0,0,-1,  1,0,0, 0,-1,0},
+            {0,-1,0,  1,0,0, 0,0,1}, {0,1,0, -1,0,0, 0,0,1}
     };
     private static final String[] LABELS = {"ПРАВО", "ЛЕВО", "ВЕРХ", "НИЗ", "ПЕРЕД", "ЗАД"};
 
@@ -60,7 +60,7 @@ public final class OrientationCubeView extends View {
     private void buildFaces() {
         visibleFaces.clear();
         float[] eye = ViewCubeMath.eyeDirection(yaw, pitch);
-        float[] right = normalize(new float[]{eye[2], 0f, -eye[0]});
+        float[] right = normalize(new float[]{-eye[1], eye[0], 0f});
         float[] up = normalize(cross(eye, right));
         float size = Math.min(getWidth(), getHeight()) * .32f;
         float cx = getWidth() * .5f, cy = getHeight() * .5f;

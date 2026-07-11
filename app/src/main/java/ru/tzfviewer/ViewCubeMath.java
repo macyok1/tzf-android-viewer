@@ -24,8 +24,8 @@ final class ViewCubeMath {
         if ((x == 0 && y == 0 && z == 0) || Math.abs(x) > 1 || Math.abs(y) > 1 || Math.abs(z) > 1)
             return null;
         float length = (float) Math.sqrt(x * x + y * y + z * z);
-        float yaw = (float) Math.toDegrees(Math.atan2(x, z));
-        float pitch = (float) -Math.toDegrees(Math.asin(y / length));
+        float yaw = (float) Math.toDegrees(Math.atan2(x, -y));
+        float pitch = (float) -Math.toDegrees(Math.asin(z / length));
         return new float[]{normalizeYaw(yaw), clampPitch(pitch)};
     }
 
@@ -34,8 +34,8 @@ final class ViewCubeMath {
         double yr = Math.toRadians(yaw), pr = Math.toRadians(clampPitch(pitch));
         return new float[]{
                 (float) (Math.cos(pr) * Math.sin(yr)),
-                (float) -Math.sin(pr),
-                (float) (Math.cos(pr) * Math.cos(yr))
+                (float) (-Math.cos(pr) * Math.cos(yr)),
+                (float) -Math.sin(pr)
         };
     }
 }

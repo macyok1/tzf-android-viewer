@@ -20,12 +20,12 @@ public class ViewCubeMathTest {
     }
 
     @Test public void principalDirectionsMatchCameraConvention() {
-        assertArrayEquals(new float[]{0,0},ViewCubeMath.directionToAngles(0,0,1),T);
+        assertArrayEquals(new float[]{0,0},ViewCubeMath.directionToAngles(0,-1,0),T);
         assertArrayEquals(new float[]{90,0},ViewCubeMath.directionToAngles(1,0,0),T);
         assertArrayEquals(new float[]{-90,0},ViewCubeMath.directionToAngles(-1,0,0),T);
-        assertArrayEquals(new float[]{180,0},ViewCubeMath.directionToAngles(0,0,-1),T);
-        assertArrayEquals(new float[]{0,-89},ViewCubeMath.directionToAngles(0,1,0),T);
-        assertArrayEquals(new float[]{0,89},ViewCubeMath.directionToAngles(0,-1,0),T);
+        assertArrayEquals(new float[]{180,0},ViewCubeMath.directionToAngles(0,1,0),T);
+        assertArrayEquals(new float[]{0,-89},ViewCubeMath.directionToAngles(0,0,1),T);
+        assertArrayEquals(new float[]{0,89},ViewCubeMath.directionToAngles(0,0,-1),T);
     }
 
     @Test public void yawUsesShortestPathAcrossBoundary() {
@@ -37,7 +37,7 @@ public class ViewCubeMathTest {
     @Test public void eyeDirectionRoundTripsAngles() {
         float[] eye=ViewCubeMath.eyeDirection(45,-35.26439f);
         float n=(float)Math.sqrt(3);
-        assertArrayEquals(new float[]{1/n,1/n,1/n},eye,1e-3f);
+        assertArrayEquals(new float[]{1/n,-1/n,1/n},eye,1e-3f);
     }
 
     @Test public void invalidDirectionIsRejectedAndPitchIsClamped() {
