@@ -40,6 +40,7 @@ final class PointCloudView extends GLSurfaceView {
         queueEvent(() -> renderer.setCloud(xyz));
         requestRender();
     }
+    void setSecondaryCloud(float[] xyz) { queueEvent(() -> renderer.setSecondaryCloud(xyz)); requestRender(); }
     void setMeasureMode(boolean enabled, MeasureListener listener) {
         measureMode = enabled; measureListener = listener;
         queueEvent(() -> renderer.clearMeasure());
@@ -85,6 +86,8 @@ final class PointCloudView extends GLSurfaceView {
         private int position;
         private int matrix;
         private FloatBuffer points;
+        private FloatBuffer secondaryPoints;
+        private int secondaryCount;
         private float[] cloud;
         private int surfaceWidth, surfaceHeight;
         private final float[] measure = new float[6];
@@ -111,6 +114,7 @@ final class PointCloudView extends GLSurfaceView {
             points = ByteBuffer.allocateDirect(xyz.length * 4).order(ByteOrder.nativeOrder()).asFloatBuffer();
             points.put(xyz).position(0);
         }
+        void setSecondaryCloud(float[] xyz) { secondaryCount=xyz.length/3; secondaryPoints=ByteBuffer.allocateDirect(xyz.length*4).order(ByteOrder.nativeOrder()).asFloatBuffer(); secondaryPoints.put(xyz).position(0); }
 
         @Override public void onSurfaceCreated(javax.microedition.khronos.opengles.GL10 gl,
                                                javax.microedition.khronos.egl.EGLConfig config) {
@@ -145,6 +149,7 @@ final class PointCloudView extends GLSurfaceView {
             GLES20.glEnableVertexAttribArray(position);
             GLES20.glVertexAttribPointer(position, 3, GLES20.GL_FLOAT, false, 12, points);
             GLES20.glDrawArrays(GLES20.GL_POINTS, 0, pointCount);
+            if(secondaryPoints!=null){ GLES20.glVertexAttribPointer(position,3,GLES20.GL_FLOAT,false,12,secondaryPoints); GLES20.glDrawArrays(GLES20.GL_POINTS,0,secondaryCount); }
             if(measureCount==2){ FloatBuffer b=ByteBuffer.allocateDirect(24).order(ByteOrder.nativeOrder()).asFloatBuffer(); b.put(measure).position(0); GLES20.glLineWidth(3f); GLES20.glVertexAttribPointer(position,3,GLES20.GL_FLOAT,false,12,b); GLES20.glDrawArrays(GLES20.GL_LINES,0,2); }
             GLES20.glDisableVertexAttribArray(position);
         }

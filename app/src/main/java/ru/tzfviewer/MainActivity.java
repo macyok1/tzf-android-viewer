@@ -18,6 +18,7 @@ import java.util.concurrent.Executors;
 
 public final class MainActivity extends Activity {
     private static final int PICK_TZF = 101;
+    private static final int PICK_SECONDARY_TZF = 102;
     private static final int PREVIEW_LIMIT = 150_000;
     private final ExecutorService decoder = Executors.newSingleThreadExecutor();
     private TextView status;
@@ -31,6 +32,7 @@ public final class MainActivity extends Activity {
         layout.setOrientation(LinearLayout.VERTICAL);
         open = new Button(this);
         open.setText("Открыть TZF");
+        Button add = new Button(this); add.setText("Добавить TZF");
         Button view = new Button(this); view.setText("Вид: перспектива / размеры");
         Button ruler = new Button(this); ruler.setText("Линейка");
         OrientationCubeView directions = new OrientationCubeView(this, (yaw,pitch) -> cloud.setPreset(yaw,pitch));
@@ -39,6 +41,7 @@ public final class MainActivity extends Activity {
         cloud = new PointCloudView(this);
         cloud.setVisibility(View.GONE);
         layout.addView(open);
+        layout.addView(add);
         layout.addView(view); layout.addView(ruler); layout.addView(directions, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 150));
         layout.addView(status);
         layout.addView(cloud, new LinearLayout.LayoutParams(
@@ -47,6 +50,7 @@ public final class MainActivity extends Activity {
         view.setOnClickListener(v -> cloud.toggleProjection());
         ruler.setOnClickListener(v -> { ruler.setSelected(!ruler.isSelected()); cloud.setMeasureMode(ruler.isSelected(), (length, deltaZ) -> status.setText(String.format(java.util.Locale.US,"Длина: %.3f м, ΔZ: %.3f м",length,deltaZ))); });
         open.setOnClickListener(v -> selectTzf());
+        add.setOnClickListener(v -> selectSecondaryTzf());
     }
 
     private void selectTzf() {
@@ -57,10 +61,15 @@ public final class MainActivity extends Activity {
                 Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
         startActivityForResult(intent, PICK_TZF);
     }
+    private void selectSecondaryTzf() {
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.setType("application/octet-stream"); intent.addCategory(Intent.CATEGORY_OPENABLE);
+        startActivityForResult(intent, PICK_SECONDARY_TZF);
+    }
 
     @Override protected void onActivityResult(int request, int result, Intent data) {
         super.onActivityResult(request, result, data);
-        if (request != PICK_TZF || result != RESULT_OK || data == null ||
+        if ((request != PICK_TZF && request != PICK_SECONDARY_TZF) || result != RESULT_OK || data == null ||
                 data.getData() == null) return;
         Uri uri = data.getData();
         try {
@@ -69,8 +78,9 @@ public final class MainActivity extends Activity {
         } catch (SecurityException ignored) {
             // Некоторые файловые провайдеры не поддерживают сохраняемое разрешение.
         }
-        decode(uri);
+        if (request == PICK_TZF) decode(uri); else decodeSecondary(uri);
     }
+    private void decodeSecondary(Uri uri) { decoder.execute(() -> { try { float[] xyz=TzfNative.decodePreview(copyToCache(uri).getAbsolutePath(), 60_000, 1); runOnUiThread(() -> { cloud.setSecondaryCloud(xyz); status.setText("Второй скан добавлен: " + (xyz.length/3) + " точек"); }); } catch(Exception e) { runOnUiThread(() -> status.setText("Не удалось добавить TZF: " + e.getMessage())); } }); }
 
     private void decode(Uri uri) {
         open.setEnabled(false);
