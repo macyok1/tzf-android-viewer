@@ -90,6 +90,9 @@ private:
 [[nodiscard]] std::vector<std::uint8_t> undoTransposeDerive(
     const std::vector<std::uint8_t>& encoded, std::uint32_t width,
     std::uint32_t height);
+[[nodiscard]] std::vector<std::uint8_t> undoRowDeriveTranspose(
+    const std::vector<std::uint8_t>& encoded, std::uint32_t width,
+    std::uint32_t height);
 [[nodiscard]] std::vector<std::uint8_t> decodeTilePayload(
     BinaryFile& file, const BlockDescriptor& block,
     const TileHeader& header);

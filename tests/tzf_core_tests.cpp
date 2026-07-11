@@ -78,6 +78,15 @@ int main() {
         15, 0, 0, 0, 6, 0, 0, 0, 21, 0, 0, 0};
     assert(restored == expected);
 
+    const std::vector<std::uint8_t> rowDeltas{
+        1, 0, 0, 0, 2, 0, 0, 0, 3, 0, 0, 0,
+        4, 0, 0, 0, 5, 0, 0, 0, 6, 0, 0, 0};
+    const auto rowRestored = tzf::undoRowDeriveTranspose(rowDeltas, 2, 3);
+    const std::vector<std::uint8_t> rowExpected{
+        1, 0, 0, 0, 4, 0, 0, 0, 3, 0, 0, 0,
+        9, 0, 0, 0, 6, 0, 0, 0, 15, 0, 0, 0};
+    assert(rowRestored == rowExpected);
+
     const auto path = writeFixture();
     tzf::BinaryFile file(path);
     const auto directory = tzf::parseBlockDirectory(file, 16);

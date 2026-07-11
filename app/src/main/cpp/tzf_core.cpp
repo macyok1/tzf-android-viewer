@@ -23,6 +23,13 @@ std::uint64_t readU64(const std::uint8_t* p) {
            (static_cast<std::uint64_t>(readU32(p + 4)) << 32U);
 }
 
+std::int32_t readI32(const std::uint8_t* p) {
+    const auto bits = readU32(p);
+    std::int32_t value{};
+    std::memcpy(&value, &bits, sizeof(value));
+    return value;
+}
+
 bool rangeFits(std::uint64_t offset, std::uint64_t length,
                std::uint64_t total) {
     return offset <= total && length <= total - offset;
@@ -67,6 +74,44 @@ void appendCopy(std::vector<std::uint8_t>& output, std::uint32_t offset,
     for (std::uint32_t i = 0; i < length; ++i) {
         output.push_back(output[output.size() - offset]);
     }
+}
+
+std::vector<std::uint8_t> transposeU32(
+    const std::vector<std::uint32_t>& source, std::uint32_t width,
+    std::uint32_t height) {
+    std::vector<std::uint8_t> output(source.size() * 4U);
+    for (std::uint32_t x = 0; x < width; ++x) {
+        for (std::uint32_t y = 0; y < height; ++y) {
+            const auto sourceIndex =
+                static_cast<std::size_t>(x) * height + y;
+            const auto destination =
+                static_cast<std::size_t>(y) * width + x;
+            const auto value = source[sourceIndex];
+            output[destination * 4U] = static_cast<std::uint8_t>(value);
+            output[destination * 4U + 1] =
+                static_cast<std::uint8_t>(value >> 8U);
+            output[destination * 4U + 2] =
+                static_cast<std::uint8_t>(value >> 16U);
+            output[destination * 4U + 3] =
+                static_cast<std::uint8_t>(value >> 24U);
+        }
+    }
+    return output;
+}
+
+std::vector<std::uint32_t> bytesToU32(
+    const std::vector<std::uint8_t>& encoded, std::uint32_t width,
+    std::uint32_t height) {
+    const auto valueCount = static_cast<std::uint64_t>(width) * height;
+    if (valueCount > std::numeric_limits<std::size_t>::max() / 4U ||
+        encoded.size() != valueCount * 4U) {
+        throw std::runtime_error("transform dimensions do not match data");
+    }
+    std::vector<std::uint32_t> values(static_cast<std::size_t>(valueCount));
+    for (std::size_t i = 0; i < values.size(); ++i) {
+        values[i] = readU32(encoded.data() + i * 4U);
+    }
+    return values;
 }
 
 const ComponentBlocks& requireComponent(const BlockDirectory& directory,
@@ -267,36 +312,26 @@ std::vector<std::uint8_t> decodeSnappy(
 std::vector<std::uint8_t> undoTransposeDerive(
     const std::vector<std::uint8_t>& encoded, std::uint32_t width,
     std::uint32_t height) {
-    const auto valueCount = static_cast<std::uint64_t>(width) * height;
-    if (valueCount > std::numeric_limits<std::size_t>::max() / 4U ||
-        encoded.size() != valueCount * 4U) {
-        throw std::runtime_error("transpose/derive dimensions do not match data");
-    }
-
-    std::vector<std::uint32_t> derived(static_cast<std::size_t>(valueCount));
+    auto derived = bytesToU32(encoded, width, height);
     for (std::size_t i = 0; i < derived.size(); ++i) {
-        derived[i] = readU32(encoded.data() + i * 4U);
         if (i != 0) {
             derived[i] += derived[i - 1]; // uint32 wrap is intentional.
         }
     }
+    return transposeU32(derived, width, height);
+}
 
-    std::vector<std::uint8_t> output(encoded.size());
+std::vector<std::uint8_t> undoRowDeriveTranspose(
+    const std::vector<std::uint8_t>& encoded, std::uint32_t width,
+    std::uint32_t height) {
+    auto derived = bytesToU32(encoded, width, height);
     for (std::uint32_t x = 0; x < width; ++x) {
-        for (std::uint32_t y = 0; y < height; ++y) {
-            const auto source = static_cast<std::size_t>(x) * height + y;
-            const auto destination = static_cast<std::size_t>(y) * width + x;
-            const auto value = derived[source];
-            output[destination * 4U] = static_cast<std::uint8_t>(value);
-            output[destination * 4U + 1] =
-                static_cast<std::uint8_t>(value >> 8U);
-            output[destination * 4U + 2] =
-                static_cast<std::uint8_t>(value >> 16U);
-            output[destination * 4U + 3] =
-                static_cast<std::uint8_t>(value >> 24U);
+        const auto rowStart = static_cast<std::size_t>(x) * height;
+        for (std::uint32_t y = 1; y < height; ++y) {
+            derived[rowStart + y] += derived[rowStart + y - 1];
         }
     }
-    return output;
+    return transposeU32(derived, width, height);
 }
 
 std::vector<std::uint8_t> decodeTilePayload(BinaryFile& file,
@@ -306,8 +341,13 @@ std::vector<std::uint8_t> decodeTilePayload(BinaryFile& file,
     constexpr std::uint64_t snappyCodec = 0x839a721b429840b9ULL;
     constexpr std::uint64_t snappyTransposeDerive =
         0xafec6c11bc26b6c5ULL;
+    constexpr std::uint64_t fwhaSnap2 = 0xa4fd4753b90ff7acULL;
+    constexpr std::uint64_t fwvaSnap2 = 0xa0da156d68656d0fULL;
+    constexpr std::uint64_t fwsdSnap2 = 0x93d2c23edc95d64dULL;
     if (header.codecId != snappyCodec &&
-        header.codecId != snappyTransposeDerive) {
+        header.codecId != snappyTransposeDerive &&
+        header.codecId != fwhaSnap2 && header.codecId != fwvaSnap2 &&
+        header.codecId != fwsdSnap2) {
         throw std::runtime_error("tile codec is not a Snappy variant");
     }
     const auto compressed =
@@ -318,6 +358,13 @@ std::vector<std::uint8_t> decodeTilePayload(BinaryFile& file,
     }
     if (header.codecId == snappyTransposeDerive) {
         return undoTransposeDerive(decoded, header.width, header.height);
+    }
+    if (header.codecId == fwvaSnap2 || header.codecId == fwsdSnap2) {
+        return undoRowDeriveTranspose(decoded, header.width, header.height);
+    }
+    if (header.codecId == fwhaSnap2) {
+        return transposeU32(bytesToU32(decoded, header.width, header.height),
+                            header.width, header.height);
     }
     return decoded;
 }
@@ -370,17 +417,14 @@ std::vector<SphericalPoint> decodeSphericalLine(
             const auto valueIndex =
                 static_cast<std::size_t>(localX) * tileSize + localY;
             const auto rho = readU32(channels[0].data() + valueIndex * 4U);
-            const auto polar = readU32(channels[1].data() + valueIndex * 4U);
+            const auto polar = readI32(channels[1].data() + valueIndex * 4U);
             const auto azimuth =
-                readU32(channels[2].data() + valueIndex * 4U);
+                readI32(channels[2].data() + valueIndex * 4U);
             auto& point = result[firstX + localX];
-            if (rho != 0) {
-                point.rho = static_cast<float>(rho) / headers[0].scale;
-                point.polar =
-                    static_cast<float>(polar) / headers[1].scale;
-                point.azimuth =
-                    static_cast<float>(azimuth) / headers[2].scale;
-            }
+            point.rho = static_cast<float>(rho) / headers[0].scale;
+            point.polar = static_cast<float>(polar) / headers[1].scale;
+            point.azimuth =
+                static_cast<float>(azimuth) / headers[2].scale;
         }
     }
     return result;
