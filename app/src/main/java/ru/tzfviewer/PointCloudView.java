@@ -40,6 +40,7 @@ public final class PointCloudView extends GLSurfaceView {
     void setCloud(float[] xyz){queueEvent(()->renderer.setCloud(xyz));requestRender();}
     void setSecondaryCloud(float[] xyz){queueEvent(()->renderer.setSecondaryCloud(xyz));requestRender();}
     void setSceneCloud(String id,float[] xyz,float[] transform,int color,boolean visible){float[] points=xyz.clone(),pose=transform.clone();queueEvent(()->renderer.setSceneCloud(id,points,pose,color,visible));requestRender();}
+    void appendSceneCloud(String id,float[] xyz,float[] transform,int color,boolean visible,boolean reset){float[] points=xyz.clone(),pose=transform.clone();queueEvent(()->renderer.appendSceneCloud(id,points,pose,color,visible,reset));requestRender();}
     void setSceneCloudVisible(String id,boolean visible){queueEvent(()->renderer.setSceneCloudVisible(id,visible));requestRender();}
     void removeSceneCloud(String id){queueEvent(()->renderer.sceneClouds.remove(id));requestRender();}
     void setSecondaryTransform(float[] v){float[] copy=v.clone();queueEvent(()->renderer.setTransform(copy));requestRender();}
@@ -99,7 +100,8 @@ public final class PointCloudView extends GLSurfaceView {
         void setTransform(float[] v){System.arraycopy(v,0,transform,0,Math.min(4,v.length));}
         void setCloud(float[] xyz){cloud=xyz;pointCount=xyz.length/3;float[] b=bounds(xyz);cx=(b[0]+b[3])*.5f;cy=(b[1]+b[4])*.5f;cz=(b[2]+b[5])*.5f;span=Math.max(1f,Math.max(b[3]-b[0],Math.max(b[4]-b[1],b[5]-b[2])));points=direct(xyz.length);points.put(xyz).position(0);buildGrid();}
         void setSecondaryCloud(float[] xyz){secondaryCount=xyz.length/3;float[] b=bounds(xyz);secondaryCx=(b[0]+b[3])*.5f;secondaryCy=(b[1]+b[4])*.5f;secondaryCz=(b[2]+b[5])*.5f;secondaryPoints=direct(xyz.length);secondaryPoints.put(xyz).position(0);}
-        void setSceneCloud(String id,float[] xyz,float[] pose,int argb,boolean visible){SceneCloud c=sceneClouds.get(id);if(c==null){c=new SceneCloud();sceneClouds.put(id,c);}c.buffer=direct(xyz.length);c.buffer.put(xyz).position(0);c.count=xyz.length/3;System.arraycopy(pose,0,c.pose,0,Math.min(4,pose.length));c.r=((argb>>16)&255)/255f;c.g=((argb>>8)&255)/255f;c.b=(argb&255)/255f;c.visible=visible;}
+        void setSceneCloud(String id,float[] xyz,float[] pose,int argb,boolean visible){appendSceneCloud(id,xyz,pose,argb,visible,true);}
+        void appendSceneCloud(String id,float[] xyz,float[] pose,int argb,boolean visible,boolean reset){SceneCloud c=sceneClouds.get(id);if(c==null){c=new SceneCloud();sceneClouds.put(id,c);}if(reset)c.chunks.clear();FloatBuffer buffer=direct(xyz.length);buffer.put(xyz).position(0);c.chunks.add(buffer);System.arraycopy(pose,0,c.pose,0,Math.min(4,pose.length));c.r=((argb>>16)&255)/255f;c.g=((argb>>8)&255)/255f;c.b=(argb&255)/255f;c.visible=visible;}
         void setSceneCloudVisible(String id,boolean visible){SceneCloud c=sceneClouds.get(id);if(c!=null)c.visible=visible;}
         static float[] bounds(float[] a){float[] b={Float.MAX_VALUE,Float.MAX_VALUE,Float.MAX_VALUE,-Float.MAX_VALUE,-Float.MAX_VALUE,-Float.MAX_VALUE};for(int i=0;i<a.length;i+=3){b[0]=Math.min(b[0],a[i]);b[3]=Math.max(b[3],a[i]);b[1]=Math.min(b[1],a[i+1]);b[4]=Math.max(b[4],a[i+1]);b[2]=Math.min(b[2],a[i+2]);b[5]=Math.max(b[5],a[i+2]);}return b;}
         void buildGrid(){float raw=span/10f,pow=(float)Math.pow(10,Math.floor(Math.log10(raw))),n=raw/pow,step=(n<2?1:n<5?2:5)*pow;int half=10;gridCount=(half*2+1)*4+6;gridBuffer=direct(gridCount*3);float extent=step*half;for(int i=-half;i<=half;i++){float p=i*step;put(gridBuffer,cx-extent,p+cy,0,cx+extent,p+cy,0);put(gridBuffer,p+cx,cy-extent,0,p+cx,cy+extent,0);}put(gridBuffer,cx-extent,0,0,cx+extent,0,0);put(gridBuffer,0,cy-extent,0,0,cy+extent,0);put(gridBuffer,0,0,-extent*.25f,0,0,extent*.25f);gridBuffer.position(0);}
@@ -112,7 +114,7 @@ public final class PointCloudView extends GLSurfaceView {
             if(gridVisible&&gridBuffer!=null){draw(gridBuffer,gridCount,GLES20.GL_LINES,gridMvp,.20f,.28f,.34f,1);drawAxes();}
             if(primaryVisible)draw(points,pointCount,GLES20.GL_POINTS,primaryMvp,.12f,.78f,1,1);
             if(secondaryVisible&&secondaryPoints!=null){draw(secondaryPoints,secondaryCount,GLES20.GL_POINTS,secondaryMvp,1,.58f,.12f,1);drawGizmo();}
-            for(SceneCloud c:sceneClouds.values())if(c.visible&&c.buffer!=null)draw(c.buffer,c.count,GLES20.GL_POINTS,sceneMvp(c),c.r,c.g,c.b,1);
+            for(SceneCloud c:sceneClouds.values())if(c.visible)for(FloatBuffer chunk:c.chunks)draw(chunk,chunk.capacity()/3,GLES20.GL_POINTS,sceneMvp(c),c.r,c.g,c.b,1);
             if(measureCount==2){measureBuffer.position(0);measureBuffer.put(measure).position(0);GLES20.glLineWidth(3);draw(measureBuffer,2,GLES20.GL_LINES,primaryMvp,1,1,1,1);}
             GLES20.glDisableVertexAttribArray(position);
         }
@@ -130,6 +132,6 @@ public final class PointCloudView extends GLSurfaceView {
         float[] pickPoint(float sx,float sy){if(cloud==null)return null;int best=-1;float bd=2500;for(int i=0;i<cloud.length;i+=3){projectIn[0]=cloud[i];projectIn[1]=cloud[i+1];projectIn[2]=cloud[i+2];projectIn[3]=1;Matrix.multiplyMV(projectOut,0,primaryMvp,0,projectIn,0);if(projectOut[3]<=0)continue;float x=(projectOut[0]/projectOut[3]*.5f+.5f)*width,y=(1-(projectOut[1]/projectOut[3]*.5f+.5f))*height,d=(x-sx)*(x-sx)+(y-sy)*(y-sy);if(d<bd){bd=d;best=i;}}if(best<0)return null;if(measureCount>=2)measureCount=0;System.arraycopy(cloud,best,measure,measureCount*3,3);measureCount++;if(measureCount<2)return null;float dx=measure[3]-measure[0],dy=measure[4]-measure[1],dz=measure[5]-measure[2];return new float[]{(float)Math.sqrt(dx*dx+dy*dy+dz*dz),Math.abs(dz)};}
         static int link(String v,String f){int vs=compile(GLES20.GL_VERTEX_SHADER,v),fs=compile(GLES20.GL_FRAGMENT_SHADER,f),p=GLES20.glCreateProgram();GLES20.glAttachShader(p,vs);GLES20.glAttachShader(p,fs);GLES20.glLinkProgram(p);int[] ok=new int[1];GLES20.glGetProgramiv(p,GLES20.GL_LINK_STATUS,ok,0);if(ok[0]==0)throw new IllegalStateException(GLES20.glGetProgramInfoLog(p));return p;}
         static int compile(int type,String src){int s=GLES20.glCreateShader(type);GLES20.glShaderSource(s,src);GLES20.glCompileShader(s);int[] ok=new int[1];GLES20.glGetShaderiv(s,GLES20.GL_COMPILE_STATUS,ok,0);if(ok[0]==0)throw new IllegalStateException(GLES20.glGetShaderInfoLog(s));return s;}
-        private static final class SceneCloud{FloatBuffer buffer;int count;boolean visible=true;float r=.2f,g=.8f,b=1f;final float[] pose=new float[4];}
+        private static final class SceneCloud{final java.util.List<FloatBuffer> chunks=new java.util.ArrayList<>();boolean visible=true;float r=.2f,g=.8f,b=1f;final float[] pose=new float[4];}
     }
 }

@@ -88,6 +88,24 @@ private:
     std::uint64_t size_{};
 };
 
+class PreviewSession {
+public:
+    explicit PreviewSession(const std::filesystem::path& path);
+    void prepare(std::uint32_t maxPoints);
+    [[nodiscard]] std::vector<float> nextChunk(std::uint32_t maxPoints);
+    void rewind() noexcept { cursor_ = 0; }
+    [[nodiscard]] bool finished() const noexcept { return cursor_ >= xyz_.size(); }
+    [[nodiscard]] std::uint64_t sourcePointCount() const noexcept { return scanInfo_.validPointCount; }
+    [[nodiscard]] std::uint32_t preparedPointCount() const noexcept { return static_cast<std::uint32_t>(xyz_.size()/3U); }
+private:
+    BinaryFile file_;
+    FileHeader fileHeader_;
+    ScanInfo scanInfo_;
+    BlockDirectory directory_;
+    std::vector<float> xyz_;
+    std::size_t cursor_{};
+};
+
 [[nodiscard]] BlockDirectory parseBlockDirectory(BinaryFile& file,
                                                  std::uint64_t tableOffset);
 [[nodiscard]] FileHeader parseFileHeader(BinaryFile& file);

@@ -7,8 +7,23 @@
 #include <exception>
 #include <stdexcept>
 #include <string>
+#include <atomic>
+#include <memory>
+#include <mutex>
+#include <unordered_map>
 
 namespace {
+
+std::mutex previewMutex;
+std::unordered_map<jlong, std::shared_ptr<tzf::PreviewSession>> previewSessions;
+std::atomic<jlong> nextPreviewHandle{1};
+
+std::shared_ptr<tzf::PreviewSession> requirePreview(jlong handle) {
+    std::lock_guard<std::mutex> lock(previewMutex);
+    const auto found = previewSessions.find(handle);
+    if (found == previewSessions.end()) throw std::runtime_error("preview session is closed");
+    return found->second;
+}
 
 void throwIOException(JNIEnv* env, const std::string& message) {
     const auto type = env->FindClass("java/io/IOException");
@@ -18,6 +33,23 @@ void throwIOException(JNIEnv* env, const std::string& message) {
 }
 
 } // namespace
+
+extern "C" JNIEXPORT jlong JNICALL
+Java_ru_tzfviewer_TzfNative_openPreviewSession(JNIEnv* env, jclass, jstring path) {
+    if (path == nullptr) { throwIOException(env, "preview path is null"); return 0; }
+    const char* chars = env->GetStringUTFChars(path, nullptr); if (chars == nullptr) return 0;
+    try { auto session=std::make_shared<tzf::PreviewSession>(chars);env->ReleaseStringUTFChars(path,chars);const auto handle=nextPreviewHandle.fetch_add(1);std::lock_guard<std::mutex> lock(previewMutex);previewSessions.emplace(handle,std::move(session));return handle; }
+    catch(const std::exception& e){env->ReleaseStringUTFChars(path,chars);throwIOException(env,e.what());return 0;}
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_ru_tzfviewer_TzfNative_preparePreviewSession(JNIEnv* env,jclass,jlong handle,jint maxPoints){try{if(maxPoints<=0)throw std::runtime_error("invalid preview limit");requirePreview(handle)->prepare(static_cast<std::uint32_t>(maxPoints));}catch(const std::exception& e){throwIOException(env,e.what());}}
+
+extern "C" JNIEXPORT jfloatArray JNICALL
+Java_ru_tzfviewer_TzfNative_nextPreviewChunk(JNIEnv* env,jclass,jlong handle,jint maxPoints){try{if(maxPoints<=0)throw std::runtime_error("invalid chunk limit");const auto chunk=requirePreview(handle)->nextChunk(static_cast<std::uint32_t>(maxPoints));const auto out=env->NewFloatArray(static_cast<jsize>(chunk.size()));if(out!=nullptr&&!chunk.empty())env->SetFloatArrayRegion(out,0,static_cast<jsize>(chunk.size()),chunk.data());return out;}catch(const std::exception& e){throwIOException(env,e.what());return nullptr;}}
+
+extern "C" JNIEXPORT void JNICALL
+Java_ru_tzfviewer_TzfNative_closePreviewSession(JNIEnv*,jclass,jlong handle){std::lock_guard<std::mutex> lock(previewMutex);previewSessions.erase(handle);}
 
 namespace {
 

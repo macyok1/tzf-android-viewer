@@ -582,6 +582,35 @@ PointCloudPreview decodePointCloudPreview(
     return preview;
 }
 
+PreviewSession::PreviewSession(const std::filesystem::path& path)
+    : file_(path), fileHeader_(parseFileHeader(file_)),
+      scanInfo_(parseScanInfo(file_, fileHeader_.scanInfoOffset)),
+      directory_(parseBlockDirectory(file_, fileHeader_.blockDirectoryOffset)) {
+    const auto validation = validateBlockDirectory(directory_, file_.size());
+    if (!validation.empty()) throw std::runtime_error(validation);
+}
+
+void PreviewSession::prepare(std::uint32_t maxPoints) {
+    if (maxPoints == 0) throw std::runtime_error("preview point limit is zero");
+    if (xyz_.size() / 3U >= maxPoints || xyz_.size() / 3U >= scanInfo_.validPointCount) {
+        cursor_ = 0;
+        return;
+    }
+    xyz_ = decodePointCloudPreview(file_, fileHeader_, scanInfo_, directory_, maxPoints, 1).xyz;
+    cursor_ = 0;
+}
+
+std::vector<float> PreviewSession::nextChunk(std::uint32_t maxPoints) {
+    if (maxPoints == 0 || cursor_ >= xyz_.size()) return {};
+    const auto remainingPoints = (xyz_.size() - cursor_) / 3U;
+    const auto count = std::min<std::size_t>(remainingPoints, maxPoints);
+    const auto end = cursor_ + count * 3U;
+    std::vector<float> chunk(xyz_.begin() + static_cast<std::ptrdiff_t>(cursor_),
+                             xyz_.begin() + static_cast<std::ptrdiff_t>(end));
+    cursor_ = end;
+    return chunk;
+}
+
 Point sphericalToXyz(const SphericalPoint& point) {
     const auto sinPolar = std::sin(point.polar);
     return {
