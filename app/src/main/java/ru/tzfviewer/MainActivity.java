@@ -25,7 +25,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 public final class MainActivity extends Activity {
     static final String EXTRA_PROJECT_ID = "project_id";
-    private static final int PICK_PRIMARY = 101, PICK_SECONDARY = 102;
+    private static final int PICK_PRIMARY = 101, PICK_SECONDARY = 102, PICK_SCENE = 103;
     private static final int[] POINT_BUDGETS={150_000,300_000,600_000,1_200_000,2_500_000,5_000_000,10_000_000,-1};
     private static final String STATE_TRANSFORM = "transform";
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
@@ -85,7 +85,7 @@ public final class MainActivity extends Activity {
         findViewById(R.id.openSecondary).setOnClickListener(v -> selectTzf(PICK_SECONDARY));
         findViewById(R.id.projection).setOnClickListener(v -> cloud.toggleProjection());
         findViewById(R.id.fit).setOnClickListener(v -> cloud.fitView());
-        findViewById(R.id.compactOpen).setOnClickListener(v -> selectTzf(PICK_PRIMARY));
+        findViewById(R.id.compactOpen).setOnClickListener(v -> selectTzf(PICK_SCENE));
         findViewById(R.id.compactFit).setOnClickListener(v -> cloud.fitView());
         findViewById(R.id.compactProjection).setOnClickListener(v -> cloud.toggleProjection());
         Button pointSizeButton=findViewById(R.id.pointSize),budgetButton=findViewById(R.id.pointBudget),gridButton=findViewById(R.id.grid);
@@ -94,7 +94,7 @@ public final class MainActivity extends Activity {
         pointSizeButton.setOnClickListener(v->{pointSizeIndex=(pointSizeIndex+1)%pointSizes.length;project.pointSize=pointSizes[pointSizeIndex];cloud.setPointSize(project.pointSize);pointSizeButton.setText("•• "+project.pointSize);});
         budgetButton.setOnClickListener(v->{budgetIndex=(budgetIndex+1)%POINT_BUDGETS.length;project.pointBudget=POINT_BUDGETS[budgetIndex];budgetButton.setText(budgetLabel(project.pointBudget));reloadForBudget();});
         gridButton.setSelected(project.gridVisible);gridButton.setOnClickListener(v->{project.gridVisible=!project.gridVisible;gridButton.setSelected(project.gridVisible);cloud.setGridVisible(project.gridVisible);});
-        ScanTreePanel tree=findViewById(R.id.scanTree);tree.bind(project,new ScanTreePanel.Listener(){public void changed(){project.touch(System.currentTimeMillis());tree.refresh();}public void visibility(ProjectModel.Node n,boolean v){int i=project.root.children().indexOf(n);if(i==0)cloud.setPrimaryVisible(v);else if(i==1)cloud.setSecondaryVisible(v);}});View panel=findViewById(R.id.scanPanel);findViewById(R.id.scans).setOnClickListener(v->panel.setVisibility(panel.getVisibility()==View.VISIBLE?View.GONE:View.VISIBLE));findViewById(R.id.closeScans).setOnClickListener(v->panel.setVisibility(View.GONE));
+        ScanTreePanel tree=findViewById(R.id.scanTree);tree.bind(project,new ScanTreePanel.Listener(){public void changed(){project.touch(System.currentTimeMillis());tree.refresh();}public void visibility(ProjectModel.Node n,boolean v){cloud.setSceneCloudVisible(n.id,v);int i=project.root.children().indexOf(n);if(i==0)cloud.setPrimaryVisible(v);else if(i==1)cloud.setSecondaryVisible(v);}});View panel=findViewById(R.id.scanPanel);findViewById(R.id.scans).setOnClickListener(v->panel.setVisibility(panel.getVisibility()==View.VISIBLE?View.GONE:View.VISIBLE));findViewById(R.id.closeScans).setOnClickListener(v->panel.setVisibility(View.GONE));
         cloud.setPointSize(project.pointSize);cloud.setGridVisible(project.gridVisible);pointSizeButton.setText("•• "+project.pointSize);budgetButton.setText(budgetLabel(project.pointBudget));
         registerButton.setOnClickListener(v -> startRegistration());
         cancelRegistration.setOnClickListener(v -> cancelRegistration());
@@ -245,17 +245,18 @@ public final class MainActivity extends Activity {
 
     @Override protected void onActivityResult(int request, int result, Intent data) {
         super.onActivityResult(request, result, data);
-        if ((request != PICK_PRIMARY && request != PICK_SECONDARY) || result != RESULT_OK ||
+        if ((request != PICK_PRIMARY && request != PICK_SECONDARY && request != PICK_SCENE) || result != RESULT_OK ||
                 data == null || data.getData() == null) return;
         Uri uri = data.getData();
         try { getContentResolver().takePersistableUriPermission(uri,
                 data.getFlags() & Intent.FLAG_GRANT_READ_URI_PERMISSION); }
         catch (SecurityException ignored) {}
-        rememberScan(uri);
-        decode(uri, request == PICK_SECONDARY);
+        ProjectModel.Scan scan=rememberScan(uri);
+        if(request==PICK_SCENE)decodeScene(uri,scan);else decode(uri, request == PICK_SECONDARY);
     }
 
-    private void rememberScan(Uri uri){for(ProjectModel.Node node:project.root.children())if(node instanceof ProjectModel.Scan&&uri.toString().equals(((ProjectModel.Scan)node).uri))return;String name=uri.getLastPathSegment();if(name==null||name.isEmpty())name="Scan "+(project.scanCount()+1);int slash=Math.max(name.lastIndexOf('/'),name.lastIndexOf(':'));if(slash>=0&&slash+1<name.length())name=name.substring(slash+1);ProjectModel.Scan scan=new ProjectModel.Scan(UUID.randomUUID().toString(),name);scan.uri=uri.toString();scan.color=project.scanCount()%2==0?0xff38c9e8:0xffffb44a;project.root.add(scan);project.touch(System.currentTimeMillis());ScanTreePanel tree=findViewById(R.id.scanTree);if(tree!=null)tree.refresh();}
+    private ProjectModel.Scan rememberScan(Uri uri){for(ProjectModel.Node node:project.root.children())if(node instanceof ProjectModel.Scan&&uri.toString().equals(((ProjectModel.Scan)node).uri))return (ProjectModel.Scan)node;String name=uri.getLastPathSegment();if(name==null||name.isEmpty())name="Scan "+(project.scanCount()+1);int slash=Math.max(name.lastIndexOf('/'),name.lastIndexOf(':'));if(slash>=0&&slash+1<name.length())name=name.substring(slash+1);ProjectModel.Scan scan=new ProjectModel.Scan(UUID.randomUUID().toString(),name);scan.uri=uri.toString();int[] colors={0xff38c9e8,0xffffb44a,0xff8ee06f,0xffd58cff,0xffff718a};scan.color=colors[project.scanCount()%colors.length];project.root.add(scan);project.touch(System.currentTimeMillis());ScanTreePanel tree=findViewById(R.id.scanTree);if(tree!=null)tree.refresh();return scan;}
+    private void decodeScene(Uri uri,ProjectModel.Scan scan){int generation=primaryGeneration.incrementAndGet();status.setText("Загружаем "+scan.name+"…");worker.execute(()->{try{File local=copyToCache(uri,"scene-"+scan.id+".tzf");int quota=Math.max(20_000,effectiveBudget()/Math.max(1,project.scanCount()));float[] xyz=TzfNative.decodePreview(local.getAbsolutePath(),quota,1);scan.sourcePointCount=Math.max(scan.sourcePointCount,xyz.length/3);float[] world=scan.worldTransform();runOnUiThread(()->{if(primaryGeneration.get()!=generation)return;cloud.setSceneCloud(scan.id,xyz,world,scan.color,scan.visible);status.setText(scan.name+": "+xyz.length/3+" точек");});}catch(Exception e){runOnUiThread(()->status.setText("Скан не загружен: "+e.getMessage()));}});}
 
     private void decode(Uri uri, boolean secondary) {
         AtomicInteger counter = secondary ? secondaryGeneration : primaryGeneration;
