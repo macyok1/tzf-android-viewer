@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -51,6 +52,10 @@ struct ScanInfo {
     std::uint32_t validPointCount{};
 };
 
+using JpegDecoder = std::function<std::vector<std::uint8_t>(
+    const std::vector<std::uint8_t>& jpeg, std::uint32_t expectedWidth,
+    std::uint32_t expectedHeight)>;
+
 struct ComponentBlocks {
     std::uint32_t id{};
     std::vector<BlockDescriptor> blocks;
@@ -96,6 +101,10 @@ private:
 [[nodiscard]] std::vector<std::uint8_t> decodeTilePayload(
     BinaryFile& file, const BlockDescriptor& block,
     const TileHeader& header);
+[[nodiscard]] std::vector<float> decodeIntensityLine(
+    BinaryFile& file, const ScanInfo& scanInfo,
+    const BlockDirectory& directory, std::uint32_t lineIndex,
+    const JpegDecoder& jpegDecoder);
 [[nodiscard]] std::vector<SphericalPoint> decodeSphericalLine(
     BinaryFile& file, const BlockDirectory& directory,
     std::uint32_t scanWidth, std::uint32_t scanHeight,

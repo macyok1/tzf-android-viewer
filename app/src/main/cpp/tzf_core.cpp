@@ -369,6 +369,59 @@ std::vector<std::uint8_t> decodeTilePayload(BinaryFile& file,
     return decoded;
 }
 
+std::vector<float> decodeIntensityLine(
+    BinaryFile& file, const ScanInfo& scanInfo,
+    const BlockDirectory& directory, std::uint32_t lineIndex,
+    const JpegDecoder& jpegDecoder) {
+    constexpr std::uint32_t tileHeaderSize = 28;
+    constexpr std::uint64_t jpegCodec = 0xb2ebc9519992d032ULL;
+    if (scanInfo.tileSize != 512 || lineIndex >= scanInfo.height ||
+        !jpegDecoder) {
+        throw std::runtime_error("invalid intensity line request");
+    }
+    const auto tileColumns =
+        (scanInfo.width + scanInfo.tileSize - 1U) / scanInfo.tileSize;
+    const auto tileRows =
+        (scanInfo.height + scanInfo.tileSize - 1U) / scanInfo.tileSize;
+    const auto& intensity = requireComponent(directory, 4);
+    if (intensity.blocks.size() !=
+        static_cast<std::uint64_t>(tileColumns) * tileRows) {
+        throw std::runtime_error("intensity tile count does not match scan");
+    }
+
+    std::vector<float> result(scanInfo.width);
+    const auto tileY = lineIndex / scanInfo.tileSize;
+    const auto localY = lineIndex % scanInfo.tileSize;
+    for (std::uint32_t tileX = 0; tileX < tileColumns; ++tileX) {
+        const auto tileIndex = static_cast<std::size_t>(tileX) * tileRows + tileY;
+        const auto& block = intensity.blocks[tileIndex];
+        const auto header = parseTileHeader(file, block);
+        if (header.codecId != jpegCodec || header.width != scanInfo.tileSize ||
+            header.height != scanInfo.tileSize || block.size < tileHeaderSize) {
+            throw std::runtime_error("unsupported intensity tile");
+        }
+        const auto jpeg = file.read(block.offset + tileHeaderSize,
+                                    block.size - tileHeaderSize);
+        const auto pixels = jpegDecoder(jpeg, header.width, header.height);
+        const auto pixelCount =
+            static_cast<std::uint64_t>(header.width) * header.height;
+        if (pixels.size() != pixelCount) {
+            throw std::runtime_error("JPEG decoder returned unexpected size");
+        }
+
+        const auto firstX = tileX * scanInfo.tileSize;
+        const auto xCount =
+            std::min(scanInfo.tileSize, scanInfo.width - firstX);
+        for (std::uint32_t localX = 0; localX < xCount; ++localX) {
+            const auto pixelIndex =
+                static_cast<std::size_t>(localX) * header.width + localY;
+            result[firstX + localX] =
+                static_cast<float>(pixels[pixelIndex]) / 255.0F;
+        }
+    }
+    return result;
+}
+
 std::vector<SphericalPoint> decodeSphericalLine(
     BinaryFile& file, const BlockDirectory& directory,
     std::uint32_t scanWidth, std::uint32_t scanHeight,
