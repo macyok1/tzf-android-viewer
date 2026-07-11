@@ -90,7 +90,8 @@ final class PointCloudView extends GLSurfaceView {
             points.put(xyz).position(0);
         }
 
-        @Override public void onSurfaceCreated(javax.microedition.khronos.egl.EGLConfig config) {
+        @Override public void onSurfaceCreated(javax.microedition.khronos.opengles.GL10 gl,
+                                               javax.microedition.khronos.egl.EGLConfig config) {
             GLES20.glClearColor(.025f, .04f, .07f, 1f);
             GLES20.glEnable(GLES20.GL_DEPTH_TEST);
             program = link(VERTEX, FRAGMENT);
