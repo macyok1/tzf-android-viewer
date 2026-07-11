@@ -42,6 +42,7 @@ final class PointCloudView extends GLSurfaceView {
     }
     void setSecondaryCloud(float[] xyz) { queueEvent(() -> renderer.setSecondaryCloud(xyz)); requestRender(); }
     void moveSecondary(float x,float y,float z) { queueEvent(() -> { renderer.secondaryX+=x; renderer.secondaryY+=y; renderer.secondaryZ+=z; }); requestRender(); }
+    void rotateSecondary(float x,float y,float z) { queueEvent(() -> { renderer.secondaryPitch+=x; renderer.secondaryYaw+=y; renderer.secondaryRoll+=z; }); requestRender(); }
     void setMeasureMode(boolean enabled, MeasureListener listener) {
         measureMode = enabled; measureListener = listener;
         queueEvent(() -> renderer.clearMeasure());
@@ -99,6 +100,7 @@ final class PointCloudView extends GLSurfaceView {
         private int measureCount;
         boolean orthographic;
         float secondaryX, secondaryY, secondaryZ;
+        float secondaryPitch, secondaryYaw, secondaryRoll;
         private int pointCount;
         private float cx, cy, cz, span = 1f;
         float yaw = 25f, pitch = -18f, zoom = 1f;
@@ -153,7 +155,7 @@ final class PointCloudView extends GLSurfaceView {
             GLES20.glEnableVertexAttribArray(position);
             GLES20.glVertexAttribPointer(position, 3, GLES20.GL_FLOAT, false, 12, points);
             GLES20.glDrawArrays(GLES20.GL_POINTS, 0, pointCount);
-            if(secondaryPoints!=null){ System.arraycopy(modelView,0,secondaryModelView,0,16); Matrix.translateM(secondaryModelView,0,secondaryX,secondaryY,secondaryZ); Matrix.multiplyMM(secondaryMvp,0,projection,0,secondaryModelView,0); GLES20.glUniformMatrix4fv(matrix,1,false,secondaryMvp,0); GLES20.glVertexAttribPointer(position,3,GLES20.GL_FLOAT,false,12,secondaryPoints); GLES20.glDrawArrays(GLES20.GL_POINTS,0,secondaryCount); GLES20.glUniformMatrix4fv(matrix,1,false,mvp,0); }
+            if(secondaryPoints!=null){ System.arraycopy(modelView,0,secondaryModelView,0,16); Matrix.translateM(secondaryModelView,0,secondaryX,secondaryY,secondaryZ); Matrix.rotateM(secondaryModelView,0,secondaryPitch,1,0,0); Matrix.rotateM(secondaryModelView,0,secondaryYaw,0,1,0); Matrix.rotateM(secondaryModelView,0,secondaryRoll,0,0,1); Matrix.multiplyMM(secondaryMvp,0,projection,0,secondaryModelView,0); GLES20.glUniformMatrix4fv(matrix,1,false,secondaryMvp,0); GLES20.glVertexAttribPointer(position,3,GLES20.GL_FLOAT,false,12,secondaryPoints); GLES20.glDrawArrays(GLES20.GL_POINTS,0,secondaryCount); GLES20.glUniformMatrix4fv(matrix,1,false,mvp,0); }
             if(measureCount==2){ FloatBuffer b=ByteBuffer.allocateDirect(24).order(ByteOrder.nativeOrder()).asFloatBuffer(); b.put(measure).position(0); GLES20.glLineWidth(3f); GLES20.glVertexAttribPointer(position,3,GLES20.GL_FLOAT,false,12,b); GLES20.glDrawArrays(GLES20.GL_LINES,0,2); }
             GLES20.glDisableVertexAttribArray(position);
         }

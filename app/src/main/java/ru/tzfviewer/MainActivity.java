@@ -38,6 +38,7 @@ public final class MainActivity extends Activity {
         LinearLayout joystick = new LinearLayout(this);
         String[] moveNames={"←","↑","↓","→","Z+","Z-"}; float[][] move={{-.1f,0,0},{0,.1f,0},{0,-.1f,0},{.1f,0,0},{0,0,.1f},{0,0,-.1f}};
         for(int i=0;i<moveNames.length;i++){ Button b=new Button(this); b.setText(moveNames[i]); final float[] d=move[i]; b.setOnClickListener(v->cloud.moveSecondary(d[0],d[1],d[2])); joystick.addView(b,new LinearLayout.LayoutParams(0,LinearLayout.LayoutParams.WRAP_CONTENT,1)); }
+        Button rot = new Button(this); rot.setText("↻"); rot.setOnClickListener(v -> cloud.rotateSecondary(0, 5, 0));
         OrientationCubeView directions = new OrientationCubeView(this, (yaw,pitch) -> cloud.setPreset(yaw,pitch));
         status = new TextView(this);
         status.setText("Выберите скан .tzf для предпросмотра");
@@ -47,6 +48,7 @@ public final class MainActivity extends Activity {
         layout.addView(add);
         layout.addView(view); layout.addView(ruler); layout.addView(directions, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 150));
         layout.addView(joystick);
+        layout.addView(rot);
         layout.addView(status);
         layout.addView(cloud, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
