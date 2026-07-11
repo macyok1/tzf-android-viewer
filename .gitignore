@@ -1,5 +1,6 @@
 .gradle/
 .idea/
+.superpowers/
 local.properties
 build/
 app/build/
