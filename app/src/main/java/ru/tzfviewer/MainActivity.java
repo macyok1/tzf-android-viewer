@@ -30,8 +30,8 @@ public final class MainActivity extends Activity {
     private final ExecutorService decoder = Executors.newSingleThreadExecutor();
     private final AtomicInteger primaryGeneration = new AtomicInteger();
     private final AtomicInteger secondaryGeneration = new AtomicInteger();
-    private final float[] transform = new float[6];
-    private final EditText[] fields = new EditText[6];
+    private final float[] transform = new float[4];
+    private final EditText[] fields = new EditText[4];
     private PointCloudView cloud;
     private TextView status, transformSummary;
     private EditText translationStep, rotationStep;
@@ -42,6 +42,7 @@ public final class MainActivity extends Activity {
         super.onCreate(state);
         setContentView(R.layout.activity_main);
         cloud = new PointCloudView(this);
+        cloud.setTransformListener(values -> { System.arraycopy(values,0,transform,0,4); syncTransformFields(); });
         ((FrameLayout)findViewById(R.id.viewportContainer)).addView(cloud, 0,
                 new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT,
                         FrameLayout.LayoutParams.MATCH_PARENT));
@@ -72,9 +73,9 @@ public final class MainActivity extends Activity {
         findViewById(R.id.saveTransform).setOnClickListener(v -> saveTransform());
         findViewById(R.id.restoreTransform).setOnClickListener(v -> restoreTransform());
         createAxisEditors(findViewById(R.id.translationFields), 0, translationStep);
-        createAxisEditors(findViewById(R.id.rotationFields), 3, rotationStep);
+        createRotationEditor(findViewById(R.id.rotationFields), rotationStep);
         if (state != null && state.getFloatArray(STATE_TRANSFORM) != null)
-            System.arraycopy(state.getFloatArray(STATE_TRANSFORM),0,transform,0,6);
+            System.arraycopy(state.getFloatArray(STATE_TRANSFORM),0,transform,0,Math.min(4,state.getFloatArray(STATE_TRANSFORM).length));
         setMode(false);
         syncTransform();
     }
@@ -104,20 +105,33 @@ public final class MainActivity extends Activity {
         }
     }
 
+    private void createRotationEditor(LinearLayout parent, EditText stepField) {
+        LinearLayout box=new LinearLayout(this); box.setOrientation(LinearLayout.VERTICAL); box.setPadding(4,0,4,4);
+        TextView label=new TextView(this); label.setText("Z"); label.setTextColor(getColor(R.color.text_secondary)); label.setGravity(android.view.Gravity.CENTER);
+        EditText input=new EditText(this); fields[3]=input; input.setSingleLine(true); input.setGravity(android.view.Gravity.CENTER); input.setTextColor(getColor(R.color.text_primary));
+        input.setInputType(android.text.InputType.TYPE_CLASS_NUMBER|android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL|android.text.InputType.TYPE_NUMBER_FLAG_SIGNED);
+        input.addTextChangedListener(new TextWatcher(){public void beforeTextChanged(CharSequence s,int a,int b,int c){}public void onTextChanged(CharSequence s,int a,int b,int c){}public void afterTextChanged(Editable e){if(updatingFields)return;try{transform[3]=Float.parseFloat(e.toString());input.setError(null);applyTransform();}catch(NumberFormatException ex){input.setError("Введите число");}}});
+        LinearLayout controls=new LinearLayout(this);Button minus=smallButton("−"),plus=smallButton("+");minus.setOnClickListener(v->{transform[3]-=readStep(stepField);syncTransform();});plus.setOnClickListener(v->{transform[3]+=readStep(stepField);syncTransform();});controls.addView(minus,new LinearLayout.LayoutParams(0,48,1));controls.addView(plus,new LinearLayout.LayoutParams(0,48,1));
+        box.addView(label);box.addView(input,new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,52));box.addView(controls);parent.addView(box,new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,LinearLayout.LayoutParams.WRAP_CONTENT));
+    }
+
     private Button smallButton(String text){ Button b=new Button(this); b.setText(text); b.setTextSize(20); b.setTextColor(getColor(R.color.text_primary)); return b; }
     private float readStep(EditText field){try{float value=Math.abs(Float.parseFloat(field.getText().toString()));field.setError(null);return value>0?value:0f;}catch(NumberFormatException e){field.setError("Введите положительный шаг");return 0f;}}
-    private void syncTransform(){ updatingFields=true; for(int i=0;i<6;i++) if(fields[i]!=null) fields[i].setText(String.format(Locale.US,i<3?"%.3f":"%.1f",transform[i])); updatingFields=false; applyTransform(); }
-    private void applyTransform(){ cloud.setSecondaryTransform(transform); transformSummary.setText(String.format(Locale.US,"X %.3f  Y %.3f  Z %.3f   ·   RX %.1f°  RY %.1f°  RZ %.1f°",transform[0],transform[1],transform[2],transform[3],transform[4],transform[5])); }
+    private void syncTransform(){ syncTransformFields(); applyTransform(); }
+    private void syncTransformFields(){ updatingFields=true; for(int i=0;i<4;i++) if(fields[i]!=null) fields[i].setText(String.format(Locale.US,i<3?"%.3f":"%.1f",transform[i])); updatingFields=false; transformSummary.setText(String.format(Locale.US,"X %.3f  Y %.3f  Z %.3f   ·   RZ %.1f°",transform[0],transform[1],transform[2],transform[3])); }
+    private void applyTransform(){ cloud.setSecondaryTransform(transform); syncTransformFields(); }
 
     private void saveTransform(){ getPreferences(MODE_PRIVATE).edit().putString("transform",joinTransform()).apply(); status.setText("Трансформация сохранена"); }
     private String joinTransform(){ StringBuilder out=new StringBuilder(); for(float v:transform){if(out.length()>0)out.append(',');out.append(v);} return out.toString(); }
-    private void restoreTransform(){ String raw=getPreferences(MODE_PRIVATE).getString("transform",""); String[] parts=raw.split(","); if(parts.length!=6){status.setText("Сохранённой трансформации нет");return;} try{for(int i=0;i<6;i++)transform[i]=Float.parseFloat(parts[i]);syncTransform();status.setText("Трансформация восстановлена");}catch(NumberFormatException e){status.setText("Сохранённая трансформация повреждена");} }
+    private void restoreTransform(){ String raw=getPreferences(MODE_PRIVATE).getString("transform",""); String[] parts=raw.split(","); if(parts.length!=4){status.setText("Сохранённой трансформации нет");return;} try{for(int i=0;i<4;i++)transform[i]=Float.parseFloat(parts[i]);syncTransform();status.setText("Трансформация восстановлена");}catch(NumberFormatException e){status.setText("Сохранённая трансформация повреждена");} }
 
     private void selectTzf(int request) { Intent intent=new Intent(Intent.ACTION_OPEN_DOCUMENT); intent.setType("application/octet-stream"); intent.addCategory(Intent.CATEGORY_OPENABLE); intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION); startActivityForResult(intent,request); }
 
     @Override protected void onActivityResult(int request,int result,Intent data){ super.onActivityResult(request,result,data); if((request!=PICK_PRIMARY&&request!=PICK_SECONDARY)||result!=RESULT_OK||data==null||data.getData()==null)return; Uri uri=data.getData(); try{getContentResolver().takePersistableUriPermission(uri,data.getFlags()&Intent.FLAG_GRANT_READ_URI_PERMISSION);}catch(SecurityException ignored){} decode(uri,request==PICK_SECONDARY); }
 
-    private void decode(Uri uri, boolean secondary){ AtomicInteger counter=secondary?secondaryGeneration:primaryGeneration; int generation=counter.incrementAndGet(); status.setText(secondary?"Загружаем перемещаемый скан…":"Загружаем опорный скан…"); decoder.execute(()->{ try{File local=copyToCache(uri,secondary?"secondary-preview.tzf":"primary-preview.tzf"); if(secondary){float[] xyz=TzfNative.decodePreview(local.getAbsolutePath(),60_000,1); runOnUiThread(()->{if(counter.get()!=generation)return;cloud.setSecondaryCloud(xyz);status.setText("Перемещаемый скан: "+xyz.length/3+" точек");});}else{float[] coarse=TzfNative.decodePreview(local.getAbsolutePath(),20_000,3);runOnUiThread(()->{if(counter.get()!=generation)return;cloud.setCloud(coarse);status.setText("Быстрый просмотр: "+coarse.length/3+" точек");});float[] xyz=TzfNative.decodePreview(local.getAbsolutePath(),PREVIEW_LIMIT,1);runOnUiThread(()->{if(counter.get()!=generation)return;cloud.setCloud(xyz);status.setText("Опорный скан: "+xyz.length/3+" точек");});}}catch(Exception error){runOnUiThread(()->{if(counter.get()==generation)status.setText((secondary?"Перемещаемый":"Опорный")+" скан не загружен: "+error.getMessage());});}}); }
+    private void decode(Uri uri, boolean secondary){ AtomicInteger counter=secondary?secondaryGeneration:primaryGeneration; int generation=counter.incrementAndGet(); status.setText(secondary?"Загружаем перемещаемый скан…":"Загружаем опорный скан…"); decoder.execute(()->{ try{File local=copyToCache(uri,secondary?"secondary-preview.tzf":"primary-preview.tzf"); if(secondary){publishStage(local,30_000,3,true,counter,generation,"Черновой перемещаемый скан");publishStage(local,60_000,1,true,counter,generation,"Перемещаемый скан");}else{publishStage(local,20_000,4,false,counter,generation,"Быстрый просмотр");publishStage(local,65_000,2,false,counter,generation,"Уточнение");publishStage(local,PREVIEW_LIMIT,1,false,counter,generation,"Опорный скан");}}catch(Exception error){runOnUiThread(()->{if(counter.get()==generation)status.setText((secondary?"Перемещаемый":"Опорный")+" скан не загружен: "+error.getMessage());});}}); }
+
+    private void publishStage(File local,int limit,int tileStride,boolean secondary,AtomicInteger counter,int generation,String label)throws IOException{if(counter.get()!=generation)return;float[] xyz=TzfNative.decodePreview(local.getAbsolutePath(),limit,tileStride);runOnUiThread(()->{if(counter.get()!=generation)return;if(secondary)cloud.setSecondaryCloud(xyz);else cloud.setCloud(xyz);status.setText(label+": "+xyz.length/3+" точек");});}
 
     private File copyToCache(Uri uri,String name)throws IOException{File target=new File(getCacheDir(),name);try(InputStream input=getContentResolver().openInputStream(uri);FileOutputStream output=new FileOutputStream(target,false)){if(input==null)throw new IOException("нет доступа к выбранному файлу");byte[] buffer=new byte[1024*1024];int count;while((count=input.read(buffer))!=-1)output.write(buffer,0,count);}return target;}
     @Override protected void onSaveInstanceState(Bundle out){super.onSaveInstanceState(out);out.putFloatArray(STATE_TRANSFORM,transform.clone());}

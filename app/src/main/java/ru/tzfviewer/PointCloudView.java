@@ -13,187 +13,86 @@ import java.nio.ByteOrder;
 import java.nio.FloatBuffer;
 
 public final class PointCloudView extends GLSurfaceView {
-    interface MeasureListener { void onMeasure(float length, float deltaZ); }
+    interface MeasureListener { void onMeasure(float length,float deltaZ); }
+    interface TransformListener { void onTransform(float[] values); }
     private final CloudRenderer renderer;
     private final ScaleGestureDetector scale;
-    private float lastX;
-    private float lastY;
+    private float lastX,lastY;
     private boolean measureMode;
     private MeasureListener measureListener;
+    private TransformListener transformListener;
+    private int activeHandle;
 
-    public PointCloudView(Context context) { this(context, null); }
-    public PointCloudView(Context context, AttributeSet attrs) {
-        super(context);
-        setEGLContextClientVersion(2);
-        renderer = new CloudRenderer();
-        setRenderer(renderer);
-        setRenderMode(RENDERMODE_WHEN_DIRTY);
-        scale = new ScaleGestureDetector(context, new ScaleGestureDetector.SimpleOnScaleGestureListener() {
-            @Override public boolean onScale(ScaleGestureDetector detector) {
-                final float factor=detector.getScaleFactor();
-                queueEvent(() -> renderer.zoom=Math.max(.35f,Math.min(4.5f,renderer.zoom*factor)));
-                requestRender();
-                return true;
-            }
-        });
+    public PointCloudView(Context context){this(context,null);}
+    public PointCloudView(Context context,AttributeSet attrs){
+        super(context);setEGLContextClientVersion(2);renderer=new CloudRenderer();setRenderer(renderer);setRenderMode(RENDERMODE_WHEN_DIRTY);
+        scale=new ScaleGestureDetector(context,new ScaleGestureDetector.SimpleOnScaleGestureListener(){@Override public boolean onScale(ScaleGestureDetector d){float f=d.getScaleFactor();queueEvent(()->renderer.zoom=Math.max(.35f,Math.min(8f,renderer.zoom*f)));requestRender();return true;}});
     }
 
-    void setCloud(float[] xyz) {
-        queueEvent(() -> renderer.setCloud(xyz));
-        requestRender();
-    }
-    void setSecondaryCloud(float[] xyz) { queueEvent(() -> renderer.setSecondaryCloud(xyz)); requestRender(); }
-    void setSecondaryTransform(float[] values) { float[] copy=values.clone(); queueEvent(() -> renderer.setSecondaryTransform(copy)); requestRender(); }
-    void setPrimaryVisible(boolean visible) { queueEvent(() -> renderer.primaryVisible=visible); requestRender(); }
-    void setSecondaryVisible(boolean visible) { queueEvent(() -> renderer.secondaryVisible=visible); requestRender(); }
-    void fitView() { queueEvent(() -> renderer.zoom=1f); requestRender(); }
-    void setMeasureMode(boolean enabled, MeasureListener listener) {
-        measureMode = enabled; measureListener = listener;
-        queueEvent(() -> renderer.clearMeasure());
-    }
-    void setPreset(float yaw, float pitch) { queueEvent(() -> { renderer.yaw=yaw; renderer.pitch=pitch; }); requestRender(); }
-    void toggleProjection() { queueEvent(() -> renderer.orthographic=!renderer.orthographic); requestRender(); }
+    void setTransformListener(TransformListener listener){transformListener=listener;}
+    void setCloud(float[] xyz){queueEvent(()->renderer.setCloud(xyz));requestRender();}
+    void setSecondaryCloud(float[] xyz){queueEvent(()->renderer.setSecondaryCloud(xyz));requestRender();}
+    void setSecondaryTransform(float[] v){float[] copy=v.clone();queueEvent(()->renderer.setTransform(copy));requestRender();}
+    void setPrimaryVisible(boolean v){queueEvent(()->renderer.primaryVisible=v);requestRender();}
+    void setSecondaryVisible(boolean v){queueEvent(()->renderer.secondaryVisible=v);requestRender();}
+    void fitView(){queueEvent(()->renderer.zoom=1f);requestRender();}
+    void setPreset(float yaw,float pitch){queueEvent(()->{renderer.yaw=yaw;renderer.pitch=pitch;});requestRender();}
+    void toggleProjection(){queueEvent(()->renderer.orthographic=!renderer.orthographic);requestRender();}
+    void setMeasureMode(boolean enabled,MeasureListener listener){measureMode=enabled;measureListener=listener;queueEvent(renderer::clearMeasure);requestRender();}
 
-    @Override public boolean onTouchEvent(MotionEvent event) {
-        scale.onTouchEvent(event);
-        if (measureMode && event.getActionMasked() == MotionEvent.ACTION_UP) {
-            final float x=event.getX(), y=event.getY();
-            queueEvent(() -> { float[] m=renderer.pick(x,y); if(m!=null && measureListener!=null) post(() -> measureListener.onMeasure(m[0],m[1])); });
-            return true;
-        }
-        if (event.getPointerCount() == 1) {
-            if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
-                lastX = event.getX();
-                lastY = event.getY();
-            } else if (event.getActionMasked() == MotionEvent.ACTION_MOVE) {
-                final float dx=(event.getX()-lastX)*.45f, dy=(event.getY()-lastY)*.45f;
-                queueEvent(() -> { renderer.yaw+=dx; renderer.pitch=Math.max(-89f,Math.min(89f,renderer.pitch+dy)); });
-                lastX = event.getX();
-                lastY = event.getY();
-                requestRender();
-            }
-        }
+    @Override public boolean onTouchEvent(MotionEvent e){
+        scale.onTouchEvent(e);if(scale.isInProgress())return true;
+        float x=e.getX(),y=e.getY();
+        if(measureMode&&e.getActionMasked()==MotionEvent.ACTION_UP){queueEvent(()->{float[] m=renderer.pickPoint(x,y);if(m!=null&&measureListener!=null)post(()->measureListener.onMeasure(m[0],m[1]));});return true;}
+        if(e.getActionMasked()==MotionEvent.ACTION_DOWN){lastX=x;lastY=y;queueEvent(()->activeHandle=renderer.pickGizmo(x,y));return true;}
+        if(e.getActionMasked()==MotionEvent.ACTION_MOVE&&e.getPointerCount()==1){float dx=x-lastX,dy=y-lastY;lastX=x;lastY=y;queueEvent(()->{if(activeHandle!=0){renderer.dragGizmo(activeHandle,dx,dy,x,y);float[] t=renderer.transform.clone();if(transformListener!=null)post(()->transformListener.onTransform(t));}else{renderer.yaw+=dx*.35f;renderer.pitch=Math.max(-89f,Math.min(89f,renderer.pitch+dy*.35f));}});requestRender();return true;}
+        if(e.getActionMasked()==MotionEvent.ACTION_UP||e.getActionMasked()==MotionEvent.ACTION_CANCEL){activeHandle=0;requestRender();}
         return true;
     }
 
     private static final class CloudRenderer implements GLSurfaceView.Renderer {
-        private static final String VERTEX =
-                "uniform mat4 uMvp; attribute vec3 aPosition;" +
-                "void main(){ gl_Position=uMvp*vec4(aPosition,1.0); gl_PointSize=2.2; }";
-        private static final String FRAGMENT =
-                "precision mediump float; uniform vec4 uColor; void main(){ gl_FragColor=uColor; }";
-        private final float[] projection = new float[16];
-        private final float[] view = new float[16];
-        private final float[] model = new float[16];
-        private final float[] modelView = new float[16];
-        private final float[] secondaryMvp = new float[16];
-        private final float[] secondaryModelView = new float[16];
-        private final float[] mvp = new float[16];
-        private int program;
-        private int position;
-        private int matrix;
-        private int color;
-        private FloatBuffer points;
-        private FloatBuffer secondaryPoints;
-        private int secondaryCount;
-        private float[] cloud;
-        private int surfaceWidth, surfaceHeight;
-        private final float[] measure = new float[6];
-        private final float[] pickInput = new float[4];
-        private final float[] pickOutput = new float[4];
-        private final FloatBuffer measureBuffer = ByteBuffer.allocateDirect(24).order(ByteOrder.nativeOrder()).asFloatBuffer();
-        private int measureCount;
-        boolean orthographic, primaryVisible=true, secondaryVisible=true;
-        float secondaryX, secondaryY, secondaryZ;
-        float secondaryPitch, secondaryYaw, secondaryRoll;
-        private float secondaryCx, secondaryCy, secondaryCz;
-        private int pointCount;
-        private float cx, cy, cz, span = 1f;
-        float yaw = 25f, pitch = -18f, zoom = 1f;
+        private static final String VS="uniform mat4 uMvp;uniform float uSize;attribute vec3 aPosition;void main(){gl_Position=uMvp*vec4(aPosition,1.0);gl_PointSize=uSize;}";
+        private static final String FS="precision mediump float;uniform vec4 uColor;void main(){gl_FragColor=uColor;}";
+        private final float[] projection=new float[16],view=new float[16],commonModel=new float[16],primaryMv=new float[16],primaryMvp=new float[16];
+        private final float[] local=new float[16],secondaryModel=new float[16],secondaryMv=new float[16],secondaryMvp=new float[16],gridMvp=new float[16];
+        private final float[] transform=new float[4],projectIn=new float[4],projectOut=new float[4];
+        private final float[] measure=new float[6];private int measureCount;
+        private final FloatBuffer measureBuffer=direct(6),gizmoBuffer=direct(256);
+        private FloatBuffer points,secondaryPoints,gridBuffer;private float[] cloud;
+        private int pointCount,secondaryCount,gridCount,width,height,program,position,matrix,color,size;
+        private float cx,cy,cz,span=1f,secondaryCx,secondaryCy,secondaryCz;
+        private float gizmoScreenX,gizmoScreenY,gizmoRadius=110f;
+        boolean primaryVisible=true,secondaryVisible=true,orthographic;
+        float yaw=25f,pitch=-18f,zoom=1f;
 
-        void setSecondaryTransform(float[] v){secondaryX=v[0];secondaryY=v[1];secondaryZ=v[2];secondaryPitch=v[3];secondaryYaw=v[4];secondaryRoll=v[5];}
+        static FloatBuffer direct(int floats){return ByteBuffer.allocateDirect(floats*4).order(ByteOrder.nativeOrder()).asFloatBuffer();}
+        void setTransform(float[] v){System.arraycopy(v,0,transform,0,Math.min(4,v.length));}
+        void setCloud(float[] xyz){cloud=xyz;pointCount=xyz.length/3;float[] b=bounds(xyz);cx=(b[0]+b[3])*.5f;cy=(b[1]+b[4])*.5f;cz=(b[2]+b[5])*.5f;span=Math.max(1f,Math.max(b[3]-b[0],Math.max(b[4]-b[1],b[5]-b[2])));points=direct(xyz.length);points.put(xyz).position(0);buildGrid();}
+        void setSecondaryCloud(float[] xyz){secondaryCount=xyz.length/3;float[] b=bounds(xyz);secondaryCx=(b[0]+b[3])*.5f;secondaryCy=(b[1]+b[4])*.5f;secondaryCz=(b[2]+b[5])*.5f;secondaryPoints=direct(xyz.length);secondaryPoints.put(xyz).position(0);}
+        static float[] bounds(float[] a){float[] b={Float.MAX_VALUE,Float.MAX_VALUE,Float.MAX_VALUE,-Float.MAX_VALUE,-Float.MAX_VALUE,-Float.MAX_VALUE};for(int i=0;i<a.length;i+=3){b[0]=Math.min(b[0],a[i]);b[3]=Math.max(b[3],a[i]);b[1]=Math.min(b[1],a[i+1]);b[4]=Math.max(b[4],a[i+1]);b[2]=Math.min(b[2],a[i+2]);b[5]=Math.max(b[5],a[i+2]);}return b;}
+        void buildGrid(){float raw=span/10f,pow=(float)Math.pow(10,Math.floor(Math.log10(raw))),n=raw/pow,step=(n<2?1:n<5?2:5)*pow;int half=10;gridCount=(half*2+1)*4+6;gridBuffer=direct(gridCount*3);float extent=step*half;for(int i=-half;i<=half;i++){float p=i*step;put(gridBuffer,cx-extent,p+cy,0,cx+extent,p+cy,0);put(gridBuffer,p+cx,cy-extent,0,p+cx,cy+extent,0);}put(gridBuffer,cx-extent,0,0,cx+extent,0,0);put(gridBuffer,0,cy-extent,0,0,cy+extent,0);put(gridBuffer,0,0,-extent*.25f,0,0,extent*.25f);gridBuffer.position(0);}
+        static void put(FloatBuffer b,float...v){b.put(v);}
 
-        void setCloud(float[] xyz) {
-            pointCount = xyz.length / 3;
-            cloud = xyz;
-            float minX = Float.MAX_VALUE, minY = Float.MAX_VALUE, minZ = Float.MAX_VALUE;
-            float maxX = -Float.MAX_VALUE, maxY = -Float.MAX_VALUE, maxZ = -Float.MAX_VALUE;
-            for (int i = 0; i < xyz.length; i += 3) {
-                minX = Math.min(minX, xyz[i]); maxX = Math.max(maxX, xyz[i]);
-                minY = Math.min(minY, xyz[i + 1]); maxY = Math.max(maxY, xyz[i + 1]);
-                minZ = Math.min(minZ, xyz[i + 2]); maxZ = Math.max(maxZ, xyz[i + 2]);
-            }
-            cx = (minX + maxX) * .5f; cy = (minY + maxY) * .5f; cz = (minZ + maxZ) * .5f;
-            span = Math.max(1f, Math.max(maxX - minX, Math.max(maxY - minY, maxZ - minZ)));
-            points = ByteBuffer.allocateDirect(xyz.length * 4).order(ByteOrder.nativeOrder()).asFloatBuffer();
-            points.put(xyz).position(0);
-        }
-        void setSecondaryCloud(float[] xyz) {
-            secondaryCount=xyz.length/3;
-            float minX=Float.MAX_VALUE,minY=Float.MAX_VALUE,minZ=Float.MAX_VALUE,maxX=-Float.MAX_VALUE,maxY=-Float.MAX_VALUE,maxZ=-Float.MAX_VALUE;
-            for(int i=0;i<xyz.length;i+=3){minX=Math.min(minX,xyz[i]);maxX=Math.max(maxX,xyz[i]);minY=Math.min(minY,xyz[i+1]);maxY=Math.max(maxY,xyz[i+1]);minZ=Math.min(minZ,xyz[i+2]);maxZ=Math.max(maxZ,xyz[i+2]);}
-            secondaryCx=(minX+maxX)*.5f; secondaryCy=(minY+maxY)*.5f; secondaryCz=(minZ+maxZ)*.5f;
-            secondaryPoints=ByteBuffer.allocateDirect(xyz.length*4).order(ByteOrder.nativeOrder()).asFloatBuffer(); secondaryPoints.put(xyz).position(0);
-        }
-
-        @Override public void onSurfaceCreated(javax.microedition.khronos.opengles.GL10 gl,
-                                               javax.microedition.khronos.egl.EGLConfig config) {
-            GLES20.glClearColor(.025f, .04f, .07f, 1f);
-            GLES20.glEnable(GLES20.GL_DEPTH_TEST);
-            program = link(VERTEX, FRAGMENT);
-            position = GLES20.glGetAttribLocation(program, "aPosition");
-            matrix = GLES20.glGetUniformLocation(program, "uMvp");
-            color = GLES20.glGetUniformLocation(program, "uColor");
-        }
-
-        @Override public void onSurfaceChanged(javax.microedition.khronos.opengles.GL10 gl, int width, int height) {
-            GLES20.glViewport(0, 0, width, height);
-            surfaceWidth=width; surfaceHeight=height;
-            setProjection(width,height);
-        }
-
-        @Override public void onDrawFrame(javax.microedition.khronos.opengles.GL10 gl) {
-            GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT | GLES20.GL_DEPTH_BUFFER_BIT);
-            if (points == null || pointCount == 0) return;
-            setProjection(surfaceWidth, surfaceHeight);
-            Matrix.setIdentityM(model, 0);
-            Matrix.scaleM(model, 0, 2f * zoom / span, 2f * zoom / span, 2f * zoom / span);
-            Matrix.rotateM(model, 0, pitch, 1f, 0f, 0f);
-            Matrix.rotateM(model, 0, yaw, 0f, 1f, 0f);
-            Matrix.translateM(model, 0, -cx, -cy, -cz);
-            Matrix.setLookAtM(view, 0, 0f, 0f, 3.5f, 0f, 0f, 0f,
-                    0f, 1f, 0f);
-            Matrix.multiplyMM(modelView, 0, view, 0, model, 0);
-            Matrix.multiplyMM(mvp, 0, projection, 0, modelView, 0);
-            GLES20.glUseProgram(program);
-            GLES20.glUniformMatrix4fv(matrix, 1, false, mvp, 0);
-            GLES20.glEnableVertexAttribArray(position);
-            if(primaryVisible){GLES20.glUniform4f(color,.12f,.78f,1f,1f);GLES20.glVertexAttribPointer(position,3,GLES20.GL_FLOAT,false,12,points);GLES20.glDrawArrays(GLES20.GL_POINTS,0,pointCount);}
-            if(secondaryVisible&&secondaryPoints!=null){ System.arraycopy(modelView,0,secondaryModelView,0,16); Matrix.translateM(secondaryModelView,0,secondaryX,secondaryY,secondaryZ); Matrix.translateM(secondaryModelView,0,secondaryCx,secondaryCy,secondaryCz); Matrix.rotateM(secondaryModelView,0,secondaryPitch,1,0,0); Matrix.rotateM(secondaryModelView,0,secondaryYaw,0,1,0); Matrix.rotateM(secondaryModelView,0,secondaryRoll,0,0,1); Matrix.translateM(secondaryModelView,0,-secondaryCx,-secondaryCy,-secondaryCz); Matrix.multiplyMM(secondaryMvp,0,projection,0,secondaryModelView,0); GLES20.glUniformMatrix4fv(matrix,1,false,secondaryMvp,0); GLES20.glUniform4f(color,1f,.58f,.12f,1f); GLES20.glVertexAttribPointer(position,3,GLES20.GL_FLOAT,false,12,secondaryPoints); GLES20.glDrawArrays(GLES20.GL_POINTS,0,secondaryCount); GLES20.glUniformMatrix4fv(matrix,1,false,mvp,0); }
-            if(measureCount==2){ measureBuffer.position(0); measureBuffer.put(measure).position(0); GLES20.glUniform4f(color,1f,1f,1f,1f); GLES20.glLineWidth(3f); GLES20.glVertexAttribPointer(position,3,GLES20.GL_FLOAT,false,12,measureBuffer); GLES20.glDrawArrays(GLES20.GL_LINES,0,2); }
+        @Override public void onSurfaceCreated(javax.microedition.khronos.opengles.GL10 gl,javax.microedition.khronos.egl.EGLConfig cfg){GLES20.glClearColor(.015f,.025f,.04f,1);GLES20.glEnable(GLES20.GL_DEPTH_TEST);program=link(VS,FS);position=GLES20.glGetAttribLocation(program,"aPosition");matrix=GLES20.glGetUniformLocation(program,"uMvp");color=GLES20.glGetUniformLocation(program,"uColor");size=GLES20.glGetUniformLocation(program,"uSize");}
+        @Override public void onSurfaceChanged(javax.microedition.khronos.opengles.GL10 gl,int w,int h){width=w;height=h;GLES20.glViewport(0,0,w,h);}
+        @Override public void onDrawFrame(javax.microedition.khronos.opengles.GL10 gl){
+            GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT|GLES20.GL_DEPTH_BUFFER_BIT);if(points==null)return;setMatrices();GLES20.glUseProgram(program);GLES20.glEnableVertexAttribArray(position);GLES20.glUniform1f(size,2.2f);
+            if(gridBuffer!=null){draw(gridBuffer,gridCount,GLES20.GL_LINES,gridMvp,.20f,.28f,.34f,1);drawAxes();}
+            if(primaryVisible)draw(points,pointCount,GLES20.GL_POINTS,primaryMvp,.12f,.78f,1,1);
+            if(secondaryVisible&&secondaryPoints!=null){draw(secondaryPoints,secondaryCount,GLES20.GL_POINTS,secondaryMvp,1,.58f,.12f,1);drawGizmo();}
+            if(measureCount==2){measureBuffer.position(0);measureBuffer.put(measure).position(0);GLES20.glLineWidth(3);draw(measureBuffer,2,GLES20.GL_LINES,primaryMvp,1,1,1,1);}
             GLES20.glDisableVertexAttribArray(position);
         }
+        void setMatrices(){float aspect=(float)width/Math.max(1,height);if(orthographic)Matrix.orthoM(projection,0,-2*aspect/zoom,2*aspect/zoom,-2/zoom,2/zoom,.1f,20);else Matrix.perspectiveM(projection,0,45,aspect,.1f,20);float yr=(float)Math.toRadians(yaw),pr=(float)Math.toRadians(pitch),d=orthographic?4f:3.5f/zoom;float ex=(float)(d*Math.cos(pr)*Math.sin(yr)),ey=(float)(-d*Math.sin(pr)),ez=(float)(d*Math.cos(pr)*Math.cos(yr));Matrix.setLookAtM(view,0,ex,ey,ez,0,0,0,0,1,0);Matrix.setIdentityM(commonModel,0);Matrix.scaleM(commonModel,0,2/span,2/span,2/span);Matrix.translateM(commonModel,0,-cx,-cy,-cz);Matrix.multiplyMM(primaryMv,0,view,0,commonModel,0);Matrix.multiplyMM(primaryMvp,0,projection,0,primaryMv,0);System.arraycopy(primaryMvp,0,gridMvp,0,16);Matrix.setIdentityM(local,0);Matrix.translateM(local,0,transform[0],transform[1],transform[2]);Matrix.translateM(local,0,secondaryCx,secondaryCy,secondaryCz);Matrix.rotateM(local,0,transform[3],0,0,1);Matrix.translateM(local,0,-secondaryCx,-secondaryCy,-secondaryCz);Matrix.multiplyMM(secondaryModel,0,commonModel,0,local,0);Matrix.multiplyMM(secondaryMv,0,view,0,secondaryModel,0);Matrix.multiplyMM(secondaryMvp,0,projection,0,secondaryMv,0);projectPivot();}
+        void draw(FloatBuffer b,int count,int mode,float[] m,float r,float g,float bl,float a){b.position(0);GLES20.glUniformMatrix4fv(matrix,1,false,m,0);GLES20.glUniform4f(color,r,g,bl,a);GLES20.glVertexAttribPointer(position,3,GLES20.GL_FLOAT,false,12,b);GLES20.glDrawArrays(mode,0,count);}
+        void drawAxes(){float e=span*.7f;FloatBuffer b=gizmoBuffer;b.position(0);put(b,0,0,0,e,0,0);b.position(0);draw(b,2,GLES20.GL_LINES,gridMvp,1,.18f,.18f,1);b.position(0);put(b,0,0,0,0,e,0);b.position(0);draw(b,2,GLES20.GL_LINES,gridMvp,.18f,1,.3f,1);b.position(0);put(b,0,0,0,0,0,e);b.position(0);draw(b,2,GLES20.GL_LINES,gridMvp,.2f,.45f,1,1);}
+        void drawGizmo(){float s=span*.13f,x=secondaryCx+transform[0],y=secondaryCy+transform[1],z=secondaryCz+transform[2];FloatBuffer b=gizmoBuffer;b.position(0);put(b,x,y,z,x+s,y,z);b.position(0);GLES20.glLineWidth(5);draw(b,2,GLES20.GL_LINES,primaryMvp,1,.15f,.15f,1);b.position(0);put(b,x,y,z,x,y+s,z);b.position(0);draw(b,2,GLES20.GL_LINES,primaryMvp,.15f,1,.3f,1);b.position(0);put(b,x,y,z,x,y,z+s);b.position(0);draw(b,2,GLES20.GL_LINES,primaryMvp,.2f,.5f,1,1);b.position(0);int seg=48;for(int i=0;i<seg;i++){double a=i*Math.PI*2/seg,c=(i+1)*Math.PI*2/seg;put(b,x+(float)Math.cos(a)*s*.75f,y+(float)Math.sin(a)*s*.75f,z,x+(float)Math.cos(c)*s*.75f,y+(float)Math.sin(c)*s*.75f,z);}b.position(0);draw(b,seg*2,GLES20.GL_LINES,primaryMvp,1,.75f,.15f,1);}
+        void projectPivot(){projectIn[0]=secondaryCx+transform[0];projectIn[1]=secondaryCy+transform[1];projectIn[2]=secondaryCz+transform[2];projectIn[3]=1;Matrix.multiplyMV(projectOut,0,primaryMvp,0,projectIn,0);if(projectOut[3]!=0){gizmoScreenX=(projectOut[0]/projectOut[3]*.5f+.5f)*width;gizmoScreenY=(1-(projectOut[1]/projectOut[3]*.5f+.5f))*height;}}
+        int pickGizmo(float x,float y){if(secondaryPoints==null)return 0;float dx=x-gizmoScreenX,dy=y-gizmoScreenY,d=(float)Math.hypot(dx,dy);if(d>gizmoRadius*1.45f)return 0;if(d>gizmoRadius*.65f)return 4;if(Math.abs(dx)<32&&Math.abs(dy)<32)return 5;if(Math.abs(dx)>Math.abs(dy)*1.4f)return 1;if(Math.abs(dy)>Math.abs(dx)*1.4f)return 2;return 3;}
+        void dragGizmo(int h,float dx,float dy,float sx,float sy){float k=span/Math.max(240f,Math.min(width,height))/zoom;if(h==1)transform[0]+=dx*k;else if(h==2)transform[1]-=dy*k;else if(h==3)transform[2]-=dy*k;else if(h==5){transform[0]+=dx*k;transform[1]-=dy*k;}else if(h==4){float a=(float)Math.toDegrees(Math.atan2(sy-gizmoScreenY,sx-gizmoScreenX));transform[3]=a;}}
         void clearMeasure(){measureCount=0;}
-        float[] pick(float sx,float sy){ if(cloud==null) return null; int best=-1; float bestD=2500f; for(int i=0;i<cloud.length;i+=3){ pickInput[0]=cloud[i];pickInput[1]=cloud[i+1];pickInput[2]=cloud[i+2];pickInput[3]=1f; Matrix.multiplyMV(pickOutput,0,mvp,0,pickInput,0); if(pickOutput[3]<=0)continue; float px=(pickOutput[0]/pickOutput[3]*.5f+.5f)*surfaceWidth, py=(1-(pickOutput[1]/pickOutput[3]*.5f+.5f))*surfaceHeight; float d=(px-sx)*(px-sx)+(py-sy)*(py-sy); if(d<bestD){bestD=d;best=i;} } if(best<0)return null; if(measureCount>=2)measureCount=0; System.arraycopy(cloud,best,measure,measureCount*3,3); measureCount++; if(measureCount<2)return null; float dx=measure[3]-measure[0],dy=measure[4]-measure[1],dz=measure[5]-measure[2]; return new float[]{(float)Math.sqrt(dx*dx+dy*dy+dz*dz),Math.abs(dz)}; }
-        private void setProjection(int w,int h){float a=(float)w/Math.max(1,h); if(orthographic) Matrix.orthoM(projection,0,-2*a,2*a,-2,2,.1f,20f); else Matrix.perspectiveM(projection,0,45f,a,.1f,20f);}
-
-        private static int link(String vertex, String fragment) {
-            int vs = compile(GLES20.GL_VERTEX_SHADER, vertex);
-            int fs = compile(GLES20.GL_FRAGMENT_SHADER, fragment);
-            int program = GLES20.glCreateProgram();
-            GLES20.glAttachShader(program, vs); GLES20.glAttachShader(program, fs);
-            GLES20.glLinkProgram(program);
-            int[] ok=new int[1]; GLES20.glGetProgramiv(program,GLES20.GL_LINK_STATUS,ok,0);
-            if(ok[0]==0) throw new IllegalStateException("OpenGL link: "+GLES20.glGetProgramInfoLog(program));
-            return program;
-        }
-
-        private static int compile(int type, String source) {
-            int shader = GLES20.glCreateShader(type);
-            GLES20.glShaderSource(shader, source); GLES20.glCompileShader(shader);
-            int[] ok=new int[1]; GLES20.glGetShaderiv(shader,GLES20.GL_COMPILE_STATUS,ok,0);
-            if(ok[0]==0) throw new IllegalStateException("OpenGL shader: "+GLES20.glGetShaderInfoLog(shader));
-            return shader;
-        }
+        float[] pickPoint(float sx,float sy){if(cloud==null)return null;int best=-1;float bd=2500;for(int i=0;i<cloud.length;i+=3){projectIn[0]=cloud[i];projectIn[1]=cloud[i+1];projectIn[2]=cloud[i+2];projectIn[3]=1;Matrix.multiplyMV(projectOut,0,primaryMvp,0,projectIn,0);if(projectOut[3]<=0)continue;float x=(projectOut[0]/projectOut[3]*.5f+.5f)*width,y=(1-(projectOut[1]/projectOut[3]*.5f+.5f))*height,d=(x-sx)*(x-sx)+(y-sy)*(y-sy);if(d<bd){bd=d;best=i;}}if(best<0)return null;if(measureCount>=2)measureCount=0;System.arraycopy(cloud,best,measure,measureCount*3,3);measureCount++;if(measureCount<2)return null;float dx=measure[3]-measure[0],dy=measure[4]-measure[1],dz=measure[5]-measure[2];return new float[]{(float)Math.sqrt(dx*dx+dy*dy+dz*dz),Math.abs(dz)};}
+        static int link(String v,String f){int vs=compile(GLES20.GL_VERTEX_SHADER,v),fs=compile(GLES20.GL_FRAGMENT_SHADER,f),p=GLES20.glCreateProgram();GLES20.glAttachShader(p,vs);GLES20.glAttachShader(p,fs);GLES20.glLinkProgram(p);int[] ok=new int[1];GLES20.glGetProgramiv(p,GLES20.GL_LINK_STATUS,ok,0);if(ok[0]==0)throw new IllegalStateException(GLES20.glGetProgramInfoLog(p));return p;}
+        static int compile(int type,String src){int s=GLES20.glCreateShader(type);GLES20.glShaderSource(s,src);GLES20.glCompileShader(s);int[] ok=new int[1];GLES20.glGetShaderiv(s,GLES20.GL_COMPILE_STATUS,ok,0);if(ok[0]==0)throw new IllegalStateException(GLES20.glGetShaderInfoLog(s));return s;}
     }
 }
