@@ -33,15 +33,13 @@ public final class MainActivity extends Activity {
         open.setText("Открыть TZF");
         Button view = new Button(this); view.setText("Вид: перспектива / размеры");
         Button ruler = new Button(this); ruler.setText("Линейка");
-        LinearLayout directions = new LinearLayout(this);
-        String[] names={"Верх","С","В","Ю","З"}; float[][] angles={{0,-90},{180,0},{90,0},{0,0},{-90,0}};
-        for(int i=0;i<names.length;i++){ Button b=new Button(this); b.setText(names[i]); final float[] a=angles[i]; b.setOnClickListener(v->cloud.setPreset(a[0],a[1])); directions.addView(b,new LinearLayout.LayoutParams(0,LinearLayout.LayoutParams.WRAP_CONTENT,1)); }
+        OrientationCubeView directions = new OrientationCubeView(this, (yaw,pitch) -> cloud.setPreset(yaw,pitch));
         status = new TextView(this);
         status.setText("Выберите скан .tzf для предпросмотра");
         cloud = new PointCloudView(this);
         cloud.setVisibility(View.GONE);
         layout.addView(open);
-        layout.addView(view); layout.addView(ruler); layout.addView(directions);
+        layout.addView(view); layout.addView(ruler); layout.addView(directions, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 150));
         layout.addView(status);
         layout.addView(cloud, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
