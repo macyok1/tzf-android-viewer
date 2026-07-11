@@ -26,6 +26,11 @@ jobs:
           echo "/opt/gradle-8.7/bin" >> $GITHUB_PATH
       - name: Собрать debug APK
         run: gradle :app:assembleDebug --no-daemon
+      - name: Build and test portable TZF core
+        run: |
+          cmake -S . -B build-host -DBUILD_TESTING=ON
+          cmake --build build-host --parallel
+          ctest --test-dir build-host --output-on-failure
       - name: Сохранить APK
         uses: actions/upload-artifact@v4
         with:
