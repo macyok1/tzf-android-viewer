@@ -7,6 +7,6 @@ final class TzfNative {
 
     private TzfNative() {}
 
-    static native float[] decodePreview(String localPath, int maxPoints)
+    static native float[] decodePreview(String localPath, int maxPoints, int tileStride)
             throws java.io.IOException;
 }

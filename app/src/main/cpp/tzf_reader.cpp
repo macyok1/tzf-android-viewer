@@ -20,8 +20,9 @@ void throwIOException(JNIEnv* env, const std::string& message) {
 
 extern "C" JNIEXPORT jfloatArray JNICALL
 Java_ru_tzfviewer_TzfNative_decodePreview(JNIEnv* env, jclass,
-                                          jstring path, jint maxPoints) {
-    if (path == nullptr || maxPoints <= 0) {
+                                          jstring path, jint maxPoints,
+                                          jint tileStride) {
+    if (path == nullptr || maxPoints <= 0 || tileStride <= 0) {
         throwIOException(env, "Не задан файл или лимит точек");
         return nullptr;
     }
@@ -40,7 +41,8 @@ Java_ru_tzfviewer_TzfNative_decodePreview(JNIEnv* env, jclass,
         if (!validation.empty()) throw std::runtime_error(validation);
         const auto preview = tzf::decodePointCloudPreview(
             file, header, scan, directory,
-            static_cast<std::uint32_t>(maxPoints));
+            static_cast<std::uint32_t>(maxPoints),
+            static_cast<std::uint32_t>(tileStride));
         if (preview.xyz.empty()) {
             throw std::runtime_error("TZF не содержит точек для предпросмотра");
         }

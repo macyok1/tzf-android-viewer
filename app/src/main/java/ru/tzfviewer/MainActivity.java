@@ -31,15 +31,23 @@ public final class MainActivity extends Activity {
         layout.setOrientation(LinearLayout.VERTICAL);
         open = new Button(this);
         open.setText("Открыть TZF");
+        Button view = new Button(this); view.setText("Вид: перспектива / размеры");
+        Button ruler = new Button(this); ruler.setText("Линейка");
+        LinearLayout directions = new LinearLayout(this);
+        String[] names={"Верх","С","В","Ю","З"}; float[][] angles={{0,-90},{180,0},{90,0},{0,0},{-90,0}};
+        for(int i=0;i<names.length;i++){ Button b=new Button(this); b.setText(names[i]); final float[] a=angles[i]; b.setOnClickListener(v->cloud.setPreset(a[0],a[1])); directions.addView(b,new LinearLayout.LayoutParams(0,LinearLayout.LayoutParams.WRAP_CONTENT,1)); }
         status = new TextView(this);
         status.setText("Выберите скан .tzf для предпросмотра");
         cloud = new PointCloudView(this);
         cloud.setVisibility(View.GONE);
         layout.addView(open);
+        layout.addView(view); layout.addView(ruler); layout.addView(directions);
         layout.addView(status);
         layout.addView(cloud, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
         setContentView(layout);
+        view.setOnClickListener(v -> cloud.toggleProjection());
+        ruler.setOnClickListener(v -> { ruler.setSelected(!ruler.isSelected()); cloud.setMeasureMode(ruler.isSelected(), (length, deltaZ) -> status.setText(String.format(java.util.Locale.US,"Длина: %.3f м, ΔZ: %.3f м",length,deltaZ))); });
         open.setOnClickListener(v -> selectTzf());
     }
 
@@ -73,10 +81,16 @@ public final class MainActivity extends Activity {
         decoder.execute(() -> {
             try {
                 File local = copyToCache(uri);
-                float[] xyz = TzfNative.decodePreview(local.getAbsolutePath(), PREVIEW_LIMIT);
+                float[] coarse = TzfNative.decodePreview(local.getAbsolutePath(), 20_000, 3);
+                runOnUiThread(() -> {
+                    cloud.setCloud(coarse);
+                    cloud.setVisibility(View.VISIBLE);
+                    status.setText("Быстрый предпросмотр: " + (coarse.length / 3) +
+                            " точек. Уточняем…");
+                });
+                float[] xyz = TzfNative.decodePreview(local.getAbsolutePath(), PREVIEW_LIMIT, 1);
                 runOnUiThread(() -> {
                     cloud.setCloud(xyz);
-                    cloud.setVisibility(View.VISIBLE);
                     status.setText("Точек в предпросмотре: " + (xyz.length / 3) +
                             "\nПоворот — один палец, масштаб — два пальца.");
                     open.setEnabled(true);

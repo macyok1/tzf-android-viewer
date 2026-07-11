@@ -498,10 +498,10 @@ std::vector<SphericalPoint> decodeSphericalLine(
 PointCloudPreview decodePointCloudPreview(
     BinaryFile& file, const FileHeader& fileHeader,
     const ScanInfo& scanInfo, const BlockDirectory& directory,
-    std::uint32_t maxPoints) {
+    std::uint32_t maxPoints, std::uint32_t tileStride) {
     (void)fileHeader;
     constexpr std::uint32_t tileSize = 512;
-    if (scanInfo.tileSize != tileSize || maxPoints == 0) {
+    if (scanInfo.tileSize != tileSize || maxPoints == 0 || tileStride == 0) {
         throw std::runtime_error("unsupported TZF preview request");
     }
 
@@ -526,8 +526,8 @@ PointCloudPreview decodePointCloudPreview(
     preview.sourcePointCount = scanInfo.validPointCount;
     preview.xyz.reserve(static_cast<std::size_t>(maxPoints) * 3U);
 
-    for (std::uint32_t tileX = 0; tileX < tileColumns; ++tileX) {
-        for (std::uint32_t tileY = 0; tileY < tileRows; ++tileY) {
+    for (std::uint32_t tileX = 0; tileX < tileColumns; tileX += tileStride) {
+        for (std::uint32_t tileY = 0; tileY < tileRows; tileY += tileStride) {
             const auto tileIndex =
                 static_cast<std::size_t>(tileX) * tileRows + tileY;
             const std::array<const BlockDescriptor*, 3> blocks{

@@ -121,7 +121,7 @@ private:
 [[nodiscard]] PointCloudPreview decodePointCloudPreview(
     BinaryFile& file, const FileHeader& fileHeader,
     const ScanInfo& scanInfo, const BlockDirectory& directory,
-    std::uint32_t maxPoints);
+    std::uint32_t maxPoints, std::uint32_t tileStride = 1);
 [[nodiscard]] Point sphericalToXyz(const SphericalPoint& point);
 [[nodiscard]] std::string validateBlockDirectory(
     const BlockDirectory& directory, std::uint64_t fileSize);

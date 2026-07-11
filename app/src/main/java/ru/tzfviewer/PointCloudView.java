@@ -12,10 +12,13 @@ import java.nio.ByteOrder;
 import java.nio.FloatBuffer;
 
 final class PointCloudView extends GLSurfaceView {
+    interface MeasureListener { void onMeasure(float length, float deltaZ); }
     private final CloudRenderer renderer;
     private final ScaleGestureDetector scale;
     private float lastX;
     private float lastY;
+    private boolean measureMode;
+    private MeasureListener measureListener;
 
     PointCloudView(Context context) {
         super(context);
@@ -37,9 +40,20 @@ final class PointCloudView extends GLSurfaceView {
         queueEvent(() -> renderer.setCloud(xyz));
         requestRender();
     }
+    void setMeasureMode(boolean enabled, MeasureListener listener) {
+        measureMode = enabled; measureListener = listener;
+        queueEvent(() -> renderer.clearMeasure());
+    }
+    void setPreset(float yaw, float pitch) { queueEvent(() -> { renderer.yaw=yaw; renderer.pitch=pitch; }); requestRender(); }
+    void toggleProjection() { queueEvent(() -> renderer.orthographic=!renderer.orthographic); requestRender(); }
 
     @Override public boolean onTouchEvent(MotionEvent event) {
         scale.onTouchEvent(event);
+        if (measureMode && event.getActionMasked() == MotionEvent.ACTION_UP) {
+            final float x=event.getX(), y=event.getY();
+            queueEvent(() -> { float[] m=renderer.pick(x,y); if(m!=null && measureListener!=null) post(() -> measureListener.onMeasure(m[0],m[1])); });
+            return true;
+        }
         if (event.getPointerCount() == 1) {
             if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
                 lastX = event.getX();
@@ -71,12 +85,18 @@ final class PointCloudView extends GLSurfaceView {
         private int position;
         private int matrix;
         private FloatBuffer points;
+        private float[] cloud;
+        private int surfaceWidth, surfaceHeight;
+        private final float[] measure = new float[6];
+        private int measureCount;
+        boolean orthographic;
         private int pointCount;
         private float cx, cy, cz, span = 1f;
         float yaw = 25f, pitch = -18f, zoom = 1f;
 
         void setCloud(float[] xyz) {
             pointCount = xyz.length / 3;
+            cloud = xyz;
             float minX = Float.MAX_VALUE, minY = Float.MAX_VALUE, minZ = Float.MAX_VALUE;
             float maxX = -Float.MAX_VALUE, maxY = -Float.MAX_VALUE, maxZ = -Float.MAX_VALUE;
             for (int i = 0; i < xyz.length; i += 3) {
@@ -101,12 +121,14 @@ final class PointCloudView extends GLSurfaceView {
 
         @Override public void onSurfaceChanged(javax.microedition.khronos.opengles.GL10 gl, int width, int height) {
             GLES20.glViewport(0, 0, width, height);
-            Matrix.perspectiveM(projection, 0, 45f, (float) width / Math.max(1, height), .1f, 20f);
+            surfaceWidth=width; surfaceHeight=height;
+            setProjection(width,height);
         }
 
         @Override public void onDrawFrame(javax.microedition.khronos.opengles.GL10 gl) {
             GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT | GLES20.GL_DEPTH_BUFFER_BIT);
             if (points == null || pointCount == 0) return;
+            setProjection(surfaceWidth, surfaceHeight);
             Matrix.setIdentityM(model, 0);
             Matrix.scaleM(model, 0, 2f * zoom / span, 2f * zoom / span, 2f * zoom / span);
             Matrix.rotateM(model, 0, pitch, 1f, 0f, 0f);
@@ -121,8 +143,12 @@ final class PointCloudView extends GLSurfaceView {
             GLES20.glEnableVertexAttribArray(position);
             GLES20.glVertexAttribPointer(position, 3, GLES20.GL_FLOAT, false, 12, points);
             GLES20.glDrawArrays(GLES20.GL_POINTS, 0, pointCount);
+            if(measureCount==2){ FloatBuffer b=ByteBuffer.allocateDirect(24).order(ByteOrder.nativeOrder()).asFloatBuffer(); b.put(measure).position(0); GLES20.glLineWidth(3f); GLES20.glVertexAttribPointer(position,3,GLES20.GL_FLOAT,false,12,b); GLES20.glDrawArrays(GLES20.GL_LINES,0,2); }
             GLES20.glDisableVertexAttribArray(position);
         }
+        void clearMeasure(){measureCount=0;}
+        float[] pick(float sx,float sy){ if(cloud==null) return null; int best=-1; float bestD=2500f; float[] v=new float[4]; for(int i=0;i<cloud.length;i+=3){ Matrix.multiplyMV(v,0,mvp,0,new float[]{cloud[i],cloud[i+1],cloud[i+2],1},0); if(v[3]<=0)continue; float px=(v[0]/v[3]*.5f+.5f)*surfaceWidth, py=(1-(v[1]/v[3]*.5f+.5f))*surfaceHeight; float d=(px-sx)*(px-sx)+(py-sy)*(py-sy); if(d<bestD){bestD=d;best=i;} } if(best<0)return null; System.arraycopy(cloud,best,measure,measureCount*3,3); measureCount++; if(measureCount<2)return null; float dx=measure[3]-measure[0],dy=measure[4]-measure[1],dz=measure[5]-measure[2]; return new float[]{(float)Math.sqrt(dx*dx+dy*dy+dz*dz),Math.abs(dz)}; }
+        private void setProjection(int w,int h){float a=(float)w/Math.max(1,h); if(orthographic) Matrix.orthoM(projection,0,-2*a,2*a,-2,2,.1f,20f); else Matrix.perspectiveM(projection,0,45f,a,.1f,20f);}
 
         private static int link(String vertex, String fragment) {
             int vs = compile(GLES20.GL_VERTEX_SHADER, vertex);
