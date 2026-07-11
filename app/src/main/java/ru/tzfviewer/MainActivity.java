@@ -59,7 +59,12 @@ public final class MainActivity extends Activity {
         registrationProgress = findViewById(R.id.registrationProgress);
         viewerTools = findViewById(R.id.viewerTools);
         stitchingTools = findViewById(R.id.stitchingTools);
-        ((OrientationCubeView) findViewById(R.id.orientation)).setListener(cloud::setPreset);
+        OrientationCubeView orientation = findViewById(R.id.orientation);
+        orientation.setListener(new OrientationCubeView.Listener() {
+            @Override public void onPreset(float yaw, float pitch) { cloud.setPreset(yaw, pitch); }
+            @Override public void onRotate(float deltaYaw, float deltaPitch) { cloud.rotateCamera(deltaYaw, deltaPitch); }
+        });
+        cloud.setOrientationListener(orientation::setOrientation);
 
         findViewById(R.id.modeViewer).setOnClickListener(v -> setMode(false));
         findViewById(R.id.modeStitching).setOnClickListener(v -> setMode(true));

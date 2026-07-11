@@ -1,5 +1,6 @@
 package ru.tzfviewer;
 
+import android.animation.ValueAnimator;
 import android.content.Context;
 import android.opengl.GLES20;
 import android.opengl.GLSurfaceView;
@@ -15,12 +16,16 @@ import java.nio.FloatBuffer;
 public final class PointCloudView extends GLSurfaceView {
     interface MeasureListener { void onMeasure(float length,float deltaZ); }
     interface TransformListener { void onTransform(float[] values); }
+    interface OrientationListener { void onOrientation(float yaw,float pitch); }
     private final CloudRenderer renderer;
     private final ScaleGestureDetector scale;
     private float lastX,lastY;
     private boolean measureMode;
     private MeasureListener measureListener;
     private TransformListener transformListener;
+    private OrientationListener orientationListener;
+    private ValueAnimator cameraAnimator;
+    private float uiYaw=25f,uiPitch=-18f;
 
     public PointCloudView(Context context){this(context,null);}
     public PointCloudView(Context context,AttributeSet attrs){
@@ -29,13 +34,27 @@ public final class PointCloudView extends GLSurfaceView {
     }
 
     void setTransformListener(TransformListener listener){transformListener=listener;}
+    void setOrientationListener(OrientationListener listener){orientationListener=listener;if(listener!=null)listener.onOrientation(uiYaw,uiPitch);}
     void setCloud(float[] xyz){queueEvent(()->renderer.setCloud(xyz));requestRender();}
     void setSecondaryCloud(float[] xyz){queueEvent(()->renderer.setSecondaryCloud(xyz));requestRender();}
     void setSecondaryTransform(float[] v){float[] copy=v.clone();queueEvent(()->renderer.setTransform(copy));requestRender();}
     void setPrimaryVisible(boolean v){queueEvent(()->renderer.primaryVisible=v);requestRender();}
     void setSecondaryVisible(boolean v){queueEvent(()->renderer.secondaryVisible=v);requestRender();}
     void fitView(){queueEvent(()->renderer.zoom=1f);requestRender();}
-    void setPreset(float yaw,float pitch){queueEvent(()->{renderer.yaw=yaw;renderer.pitch=pitch;});requestRender();}
+    void setPreset(float yaw,float pitch){
+        cancelCameraAnimation();
+        final float startYaw=uiYaw,startPitch=uiPitch;
+        final float deltaYaw=ViewCubeMath.shortestYawDelta(startYaw,yaw);
+        final float targetPitch=ViewCubeMath.clampPitch(pitch);
+        cameraAnimator=ValueAnimator.ofFloat(0f,1f);
+        cameraAnimator.setDuration(280);
+        cameraAnimator.addUpdateListener(a->{float t=(float)a.getAnimatedValue();float eased=t*t*(3f-2f*t);applyOrientation(startYaw+deltaYaw*eased,startPitch+(targetPitch-startPitch)*eased);});
+        cameraAnimator.start();
+    }
+    void rotateCamera(float deltaYaw,float deltaPitch){cancelCameraAnimation();applyOrientation(uiYaw+deltaYaw,uiPitch+deltaPitch);}
+    private void applyOrientation(float yaw,float pitch){uiYaw=ViewCubeMath.normalizeYaw(yaw);uiPitch=ViewCubeMath.clampPitch(pitch);float y=uiYaw,p=uiPitch;queueEvent(()->{renderer.yaw=y;renderer.pitch=p;});requestRender();notifyOrientation();}
+    private void notifyOrientation(){if(orientationListener!=null)orientationListener.onOrientation(uiYaw,uiPitch);}
+    private void cancelCameraAnimation(){if(cameraAnimator!=null){cameraAnimator.cancel();cameraAnimator=null;}}
     void toggleProjection(){queueEvent(()->renderer.orthographic=!renderer.orthographic);requestRender();}
     void setMeasureMode(boolean enabled,MeasureListener listener){measureMode=enabled;measureListener=listener;queueEvent(renderer::clearMeasure);requestRender();}
 
@@ -45,8 +64,8 @@ public final class PointCloudView extends GLSurfaceView {
         if(e.getPointerCount()>1){lastX=x;lastY=y;queueEvent(renderer::endGizmo);requestRender();return true;}
         if(scale.isInProgress())return true;
         if(measureMode&&e.getActionMasked()==MotionEvent.ACTION_UP){queueEvent(()->{float[] m=renderer.pickPoint(x,y);if(m!=null&&measureListener!=null)post(()->measureListener.onMeasure(m[0],m[1]));});return true;}
-        if(e.getActionMasked()==MotionEvent.ACTION_DOWN){lastX=x;lastY=y;queueEvent(()->renderer.beginGizmo(x,y));requestRender();return true;}
-        if(e.getActionMasked()==MotionEvent.ACTION_MOVE){float dx=x-lastX,dy=y-lastY;lastX=x;lastY=y;queueEvent(()->{float[] t=renderer.moveGesture(dx,dy,x,y);if(t!=null&&transformListener!=null)post(()->transformListener.onTransform(t));});requestRender();return true;}
+        if(e.getActionMasked()==MotionEvent.ACTION_DOWN){cancelCameraAnimation();lastX=x;lastY=y;queueEvent(()->renderer.beginGizmo(x,y));requestRender();return true;}
+        if(e.getActionMasked()==MotionEvent.ACTION_MOVE){float dx=x-lastX,dy=y-lastY;lastX=x;lastY=y;queueEvent(()->{float[] t=renderer.moveGesture(dx,dy,x,y);float cameraYaw=renderer.yaw,cameraPitch=renderer.pitch;post(()->{if(t!=null&&transformListener!=null)transformListener.onTransform(t);uiYaw=ViewCubeMath.normalizeYaw(cameraYaw);uiPitch=ViewCubeMath.clampPitch(cameraPitch);notifyOrientation();});});requestRender();return true;}
         if(e.getActionMasked()==MotionEvent.ACTION_UP||e.getActionMasked()==MotionEvent.ACTION_CANCEL){queueEvent(renderer::endGizmo);requestRender();}
         return true;
     }
@@ -92,7 +111,7 @@ public final class PointCloudView extends GLSurfaceView {
         void drawGizmoLine(FloatBuffer b,float x1,float y1,float z1,float x2,float y2,float z2,int handle,float r,float g,float bl){b.position(0);put(b,x1,y1,z1,x2,y2,z2);b.position(0);float boost=gizmo.activeHandle()==handle?1f:.78f;draw(b,2,GLES20.GL_LINES,primaryMvp,Math.min(1,r*boost+.2f*(1-boost)),Math.min(1,g*boost+.2f*(1-boost)),Math.min(1,bl*boost+.2f*(1-boost)),1);}
         void updateGizmoPivot(){gizmoPivot[0]=secondaryCx+transform[0];gizmoPivot[1]=secondaryCy+transform[1];gizmoPivot[2]=secondaryCz+transform[2];}
         void beginGizmo(float x,float y){if(secondaryPoints==null||!secondaryVisible||!inverseMvpValid){gizmo.endDrag();return;}updateGizmoPivot();gizmo.beginDrag(x,y,transform,gizmoPivot,primaryMvp,inversePrimaryMvp,width,height);}
-        float[] moveGesture(float dx,float dy,float x,float y){if(gizmo.activeHandle()!=TransformGizmo.NONE){float[] next=gizmo.updateDrag(x,y,inversePrimaryMvp,width,height);if(next!=null){setTransform(next);return transform.clone();}return null;}yaw+=dx*.35f;pitch=Math.max(-89f,Math.min(89f,pitch+dy*.35f));return null;}
+        float[] moveGesture(float dx,float dy,float x,float y){if(gizmo.activeHandle()!=TransformGizmo.NONE){float[] next=gizmo.updateDrag(x,y,inversePrimaryMvp,width,height);if(next!=null){setTransform(next);return transform.clone();}return null;}yaw=ViewCubeMath.normalizeYaw(yaw+dx*.35f);pitch=ViewCubeMath.clampPitch(pitch+dy*.35f);return null;}
         void endGizmo(){gizmo.endDrag();}
         void clearMeasure(){measureCount=0;}
         float[] pickPoint(float sx,float sy){if(cloud==null)return null;int best=-1;float bd=2500;for(int i=0;i<cloud.length;i+=3){projectIn[0]=cloud[i];projectIn[1]=cloud[i+1];projectIn[2]=cloud[i+2];projectIn[3]=1;Matrix.multiplyMV(projectOut,0,primaryMvp,0,projectIn,0);if(projectOut[3]<=0)continue;float x=(projectOut[0]/projectOut[3]*.5f+.5f)*width,y=(1-(projectOut[1]/projectOut[3]*.5f+.5f))*height,d=(x-sx)*(x-sx)+(y-sy)*(y-sy);if(d<bd){bd=d;best=i;}}if(best<0)return null;if(measureCount>=2)measureCount=0;System.arraycopy(cloud,best,measure,measureCount*3,3);measureCount++;if(measureCount<2)return null;float dx=measure[3]-measure[0],dy=measure[4]-measure[1],dz=measure[5]-measure[2];return new float[]{(float)Math.sqrt(dx*dx+dy*dy+dz*dz),Math.abs(dz)};}
