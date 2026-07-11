@@ -21,7 +21,6 @@ public final class PointCloudView extends GLSurfaceView {
     private boolean measureMode;
     private MeasureListener measureListener;
     private TransformListener transformListener;
-    private int activeHandle;
 
     public PointCloudView(Context context){this(context,null);}
     public PointCloudView(Context context,AttributeSet attrs){
@@ -41,27 +40,30 @@ public final class PointCloudView extends GLSurfaceView {
     void setMeasureMode(boolean enabled,MeasureListener listener){measureMode=enabled;measureListener=listener;queueEvent(renderer::clearMeasure);requestRender();}
 
     @Override public boolean onTouchEvent(MotionEvent e){
-        scale.onTouchEvent(e);if(scale.isInProgress())return true;
+        scale.onTouchEvent(e);
         float x=e.getX(),y=e.getY();
+        if(e.getPointerCount()>1){lastX=x;lastY=y;queueEvent(renderer::endGizmo);requestRender();return true;}
+        if(scale.isInProgress())return true;
         if(measureMode&&e.getActionMasked()==MotionEvent.ACTION_UP){queueEvent(()->{float[] m=renderer.pickPoint(x,y);if(m!=null&&measureListener!=null)post(()->measureListener.onMeasure(m[0],m[1]));});return true;}
-        if(e.getActionMasked()==MotionEvent.ACTION_DOWN){lastX=x;lastY=y;queueEvent(()->activeHandle=renderer.pickGizmo(x,y));return true;}
-        if(e.getActionMasked()==MotionEvent.ACTION_MOVE&&e.getPointerCount()==1){float dx=x-lastX,dy=y-lastY;lastX=x;lastY=y;queueEvent(()->{if(activeHandle!=0){renderer.dragGizmo(activeHandle,dx,dy,x,y);float[] t=renderer.transform.clone();if(transformListener!=null)post(()->transformListener.onTransform(t));}else{renderer.yaw+=dx*.35f;renderer.pitch=Math.max(-89f,Math.min(89f,renderer.pitch+dy*.35f));}});requestRender();return true;}
-        if(e.getActionMasked()==MotionEvent.ACTION_UP||e.getActionMasked()==MotionEvent.ACTION_CANCEL){activeHandle=0;requestRender();}
+        if(e.getActionMasked()==MotionEvent.ACTION_DOWN){lastX=x;lastY=y;queueEvent(()->renderer.beginGizmo(x,y));requestRender();return true;}
+        if(e.getActionMasked()==MotionEvent.ACTION_MOVE){float dx=x-lastX,dy=y-lastY;lastX=x;lastY=y;queueEvent(()->{float[] t=renderer.moveGesture(dx,dy,x,y);if(t!=null&&transformListener!=null)post(()->transformListener.onTransform(t));});requestRender();return true;}
+        if(e.getActionMasked()==MotionEvent.ACTION_UP||e.getActionMasked()==MotionEvent.ACTION_CANCEL){queueEvent(renderer::endGizmo);requestRender();}
         return true;
     }
 
     private static final class CloudRenderer implements GLSurfaceView.Renderer {
         private static final String VS="uniform mat4 uMvp;uniform float uSize;attribute vec3 aPosition;void main(){gl_Position=uMvp*vec4(aPosition,1.0);gl_PointSize=uSize;}";
         private static final String FS="precision mediump float;uniform vec4 uColor;void main(){gl_FragColor=uColor;}";
-        private final float[] projection=new float[16],view=new float[16],commonModel=new float[16],primaryMv=new float[16],primaryMvp=new float[16];
+        private final float[] projection=new float[16],view=new float[16],commonModel=new float[16],primaryMv=new float[16],primaryMvp=new float[16],inversePrimaryMvp=new float[16];
         private final float[] local=new float[16],secondaryModel=new float[16],secondaryMv=new float[16],secondaryMvp=new float[16],gridMvp=new float[16];
-        private final float[] transform=new float[4],projectIn=new float[4],projectOut=new float[4];
+        private final float[] transform=new float[4],projectIn=new float[4],projectOut=new float[4],gizmoPivot=new float[3];
+        private final TransformGizmo gizmo=new TransformGizmo();
         private final float[] measure=new float[6];private int measureCount;
         private final FloatBuffer measureBuffer=direct(6),gizmoBuffer=direct(512);
         private FloatBuffer points,secondaryPoints,gridBuffer;private float[] cloud;
         private int pointCount,secondaryCount,gridCount,width,height,program,position,matrix,color,size;
         private float cx,cy,cz,span=1f,secondaryCx,secondaryCy,secondaryCz;
-        private float gizmoScreenX,gizmoScreenY,gizmoRadius=110f;
+        private boolean inverseMvpValid;
         boolean primaryVisible=true,secondaryVisible=true,orthographic;
         float yaw=25f,pitch=-18f,zoom=1f;
 
@@ -83,13 +85,15 @@ public final class PointCloudView extends GLSurfaceView {
             if(measureCount==2){measureBuffer.position(0);measureBuffer.put(measure).position(0);GLES20.glLineWidth(3);draw(measureBuffer,2,GLES20.GL_LINES,primaryMvp,1,1,1,1);}
             GLES20.glDisableVertexAttribArray(position);
         }
-        void setMatrices(){float aspect=(float)width/Math.max(1,height);if(orthographic)Matrix.orthoM(projection,0,-2*aspect/zoom,2*aspect/zoom,-2/zoom,2/zoom,.1f,20);else Matrix.perspectiveM(projection,0,45,aspect,.1f,20);float yr=(float)Math.toRadians(yaw),pr=(float)Math.toRadians(pitch),d=orthographic?4f:3.5f/zoom;float ex=(float)(d*Math.cos(pr)*Math.sin(yr)),ey=(float)(-d*Math.sin(pr)),ez=(float)(d*Math.cos(pr)*Math.cos(yr));Matrix.setLookAtM(view,0,ex,ey,ez,0,0,0,0,1,0);Matrix.setIdentityM(commonModel,0);Matrix.scaleM(commonModel,0,2/span,2/span,2/span);Matrix.translateM(commonModel,0,-cx,-cy,-cz);Matrix.multiplyMM(primaryMv,0,view,0,commonModel,0);Matrix.multiplyMM(primaryMvp,0,projection,0,primaryMv,0);System.arraycopy(primaryMvp,0,gridMvp,0,16);Matrix.setIdentityM(local,0);Matrix.translateM(local,0,transform[0],transform[1],transform[2]);Matrix.translateM(local,0,secondaryCx,secondaryCy,secondaryCz);Matrix.rotateM(local,0,transform[3],0,0,1);Matrix.translateM(local,0,-secondaryCx,-secondaryCy,-secondaryCz);Matrix.multiplyMM(secondaryModel,0,commonModel,0,local,0);Matrix.multiplyMM(secondaryMv,0,view,0,secondaryModel,0);Matrix.multiplyMM(secondaryMvp,0,projection,0,secondaryMv,0);projectPivot();}
+        void setMatrices(){float aspect=(float)width/Math.max(1,height);if(orthographic)Matrix.orthoM(projection,0,-2*aspect/zoom,2*aspect/zoom,-2/zoom,2/zoom,.1f,20);else Matrix.perspectiveM(projection,0,45,aspect,.1f,20);float yr=(float)Math.toRadians(yaw),pr=(float)Math.toRadians(pitch),d=orthographic?4f:3.5f/zoom;float ex=(float)(d*Math.cos(pr)*Math.sin(yr)),ey=(float)(-d*Math.sin(pr)),ez=(float)(d*Math.cos(pr)*Math.cos(yr));Matrix.setLookAtM(view,0,ex,ey,ez,0,0,0,0,1,0);Matrix.setIdentityM(commonModel,0);Matrix.scaleM(commonModel,0,2/span,2/span,2/span);Matrix.translateM(commonModel,0,-cx,-cy,-cz);Matrix.multiplyMM(primaryMv,0,view,0,commonModel,0);Matrix.multiplyMM(primaryMvp,0,projection,0,primaryMv,0);inverseMvpValid=Matrix.invertM(inversePrimaryMvp,0,primaryMvp,0);System.arraycopy(primaryMvp,0,gridMvp,0,16);Matrix.setIdentityM(local,0);Matrix.translateM(local,0,transform[0],transform[1],transform[2]);Matrix.translateM(local,0,secondaryCx,secondaryCy,secondaryCz);Matrix.rotateM(local,0,transform[3],0,0,1);Matrix.translateM(local,0,-secondaryCx,-secondaryCy,-secondaryCz);Matrix.multiplyMM(secondaryModel,0,commonModel,0,local,0);Matrix.multiplyMM(secondaryMv,0,view,0,secondaryModel,0);Matrix.multiplyMM(secondaryMvp,0,projection,0,secondaryMv,0);updateGizmoPivot();if(inverseMvpValid)gizmo.updateScale(gizmoPivot,primaryMvp,inversePrimaryMvp,width,height);}
         void draw(FloatBuffer b,int count,int mode,float[] m,float r,float g,float bl,float a){b.position(0);GLES20.glUniformMatrix4fv(matrix,1,false,m,0);GLES20.glUniform4f(color,r,g,bl,a);GLES20.glVertexAttribPointer(position,3,GLES20.GL_FLOAT,false,12,b);GLES20.glDrawArrays(mode,0,count);}
         void drawAxes(){float e=span*.7f;FloatBuffer b=gizmoBuffer;b.position(0);put(b,0,0,0,e,0,0);b.position(0);draw(b,2,GLES20.GL_LINES,gridMvp,1,.18f,.18f,1);b.position(0);put(b,0,0,0,0,e,0);b.position(0);draw(b,2,GLES20.GL_LINES,gridMvp,.18f,1,.3f,1);b.position(0);put(b,0,0,0,0,0,e);b.position(0);draw(b,2,GLES20.GL_LINES,gridMvp,.2f,.45f,1,1);}
-        void drawGizmo(){float s=span*.13f,x=secondaryCx+transform[0],y=secondaryCy+transform[1],z=secondaryCz+transform[2];FloatBuffer b=gizmoBuffer;b.position(0);put(b,x,y,z,x+s,y,z);b.position(0);GLES20.glLineWidth(5);draw(b,2,GLES20.GL_LINES,primaryMvp,1,.15f,.15f,1);b.position(0);put(b,x,y,z,x,y+s,z);b.position(0);draw(b,2,GLES20.GL_LINES,primaryMvp,.15f,1,.3f,1);b.position(0);put(b,x,y,z,x,y,z+s);b.position(0);draw(b,2,GLES20.GL_LINES,primaryMvp,.2f,.5f,1,1);b.position(0);int seg=48;for(int i=0;i<seg;i++){double a=i*Math.PI*2/seg,c=(i+1)*Math.PI*2/seg;put(b,x+(float)Math.cos(a)*s*.75f,y+(float)Math.sin(a)*s*.75f,z,x+(float)Math.cos(c)*s*.75f,y+(float)Math.sin(c)*s*.75f,z);}b.position(0);draw(b,seg*2,GLES20.GL_LINES,primaryMvp,1,.75f,.15f,1);}
-        void projectPivot(){projectIn[0]=secondaryCx+transform[0];projectIn[1]=secondaryCy+transform[1];projectIn[2]=secondaryCz+transform[2];projectIn[3]=1;Matrix.multiplyMV(projectOut,0,primaryMvp,0,projectIn,0);if(projectOut[3]!=0){gizmoScreenX=(projectOut[0]/projectOut[3]*.5f+.5f)*width;gizmoScreenY=(1-(projectOut[1]/projectOut[3]*.5f+.5f))*height;}}
-        int pickGizmo(float x,float y){if(secondaryPoints==null)return 0;float dx=x-gizmoScreenX,dy=y-gizmoScreenY,d=(float)Math.hypot(dx,dy);if(d>gizmoRadius*1.45f)return 0;if(d>gizmoRadius*.65f)return 4;if(Math.abs(dx)<32&&Math.abs(dy)<32)return 5;if(Math.abs(dx)>Math.abs(dy)*1.4f)return 1;if(Math.abs(dy)>Math.abs(dx)*1.4f)return 2;return 3;}
-        void dragGizmo(int h,float dx,float dy,float sx,float sy){float k=span/Math.max(240f,Math.min(width,height))/zoom;if(h==1)transform[0]+=dx*k;else if(h==2)transform[1]-=dy*k;else if(h==3)transform[2]-=dy*k;else if(h==5){transform[0]+=dx*k;transform[1]-=dy*k;}else if(h==4){float a=(float)Math.toDegrees(Math.atan2(sy-gizmoScreenY,sx-gizmoScreenX));transform[3]=a;}}
+        void drawGizmo(){float s=gizmo.worldScale(),x=gizmoPivot[0],y=gizmoPivot[1],z=gizmoPivot[2];FloatBuffer b=gizmoBuffer;GLES20.glLineWidth(5);drawGizmoLine(b,x,y,z,x+s,y,z,TransformGizmo.X,1,.15f,.15f);drawGizmoLine(b,x,y,z,x,y+s,z,TransformGizmo.Y,.15f,1,.3f);drawGizmoLine(b,x,y,z,x,y,z+s,TransformGizmo.Z,.2f,.5f,1);b.position(0);float c=s*.12f;put(b,x-c,y-c,z,x+c,y+c,z,x-c,y+c,z,x+c,y-c,z);b.position(0);float xy=gizmo.activeHandle()==TransformGizmo.XY?1f:.72f;draw(b,4,GLES20.GL_LINES,primaryMvp,xy,xy,xy,1);b.position(0);int seg=48;for(int i=0;i<seg;i++){double a=i*Math.PI*2/seg,n=(i+1)*Math.PI*2/seg;put(b,x+(float)Math.cos(a)*s*.75f,y+(float)Math.sin(a)*s*.75f,z,x+(float)Math.cos(n)*s*.75f,y+(float)Math.sin(n)*s*.75f,z);}b.position(0);float hi=gizmo.activeHandle()==TransformGizmo.RZ?1f:.75f;draw(b,seg*2,GLES20.GL_LINES,primaryMvp,1,hi,.15f,1);}
+        void drawGizmoLine(FloatBuffer b,float x1,float y1,float z1,float x2,float y2,float z2,int handle,float r,float g,float bl){b.position(0);put(b,x1,y1,z1,x2,y2,z2);b.position(0);float boost=gizmo.activeHandle()==handle?1f:.78f;draw(b,2,GLES20.GL_LINES,primaryMvp,Math.min(1,r*boost+.2f*(1-boost)),Math.min(1,g*boost+.2f*(1-boost)),Math.min(1,bl*boost+.2f*(1-boost)),1);}
+        void updateGizmoPivot(){gizmoPivot[0]=secondaryCx+transform[0];gizmoPivot[1]=secondaryCy+transform[1];gizmoPivot[2]=secondaryCz+transform[2];}
+        void beginGizmo(float x,float y){if(secondaryPoints==null||!secondaryVisible||!inverseMvpValid){gizmo.endDrag();return;}updateGizmoPivot();gizmo.beginDrag(x,y,transform,gizmoPivot,primaryMvp,inversePrimaryMvp,width,height);}
+        float[] moveGesture(float dx,float dy,float x,float y){if(gizmo.activeHandle()!=TransformGizmo.NONE){float[] next=gizmo.updateDrag(x,y,inversePrimaryMvp,width,height);if(next!=null){setTransform(next);return transform.clone();}return null;}yaw+=dx*.35f;pitch=Math.max(-89f,Math.min(89f,pitch+dy*.35f));return null;}
+        void endGizmo(){gizmo.endDrag();}
         void clearMeasure(){measureCount=0;}
         float[] pickPoint(float sx,float sy){if(cloud==null)return null;int best=-1;float bd=2500;for(int i=0;i<cloud.length;i+=3){projectIn[0]=cloud[i];projectIn[1]=cloud[i+1];projectIn[2]=cloud[i+2];projectIn[3]=1;Matrix.multiplyMV(projectOut,0,primaryMvp,0,projectIn,0);if(projectOut[3]<=0)continue;float x=(projectOut[0]/projectOut[3]*.5f+.5f)*width,y=(1-(projectOut[1]/projectOut[3]*.5f+.5f))*height,d=(x-sx)*(x-sx)+(y-sy)*(y-sy);if(d<bd){bd=d;best=i;}}if(best<0)return null;if(measureCount>=2)measureCount=0;System.arraycopy(cloud,best,measure,measureCount*3,3);measureCount++;if(measureCount<2)return null;float dx=measure[3]-measure[0],dy=measure[4]-measure[1],dz=measure[5]-measure[2];return new float[]{(float)Math.sqrt(dx*dx+dy*dy+dz*dz),Math.abs(dz)};}
         static int link(String v,String f){int vs=compile(GLES20.GL_VERTEX_SHADER,v),fs=compile(GLES20.GL_FRAGMENT_SHADER,f),p=GLES20.glCreateProgram();GLES20.glAttachShader(p,vs);GLES20.glAttachShader(p,fs);GLES20.glLinkProgram(p);int[] ok=new int[1];GLES20.glGetProgramiv(p,GLES20.GL_LINK_STATUS,ok,0);if(ok[0]==0)throw new IllegalStateException(GLES20.glGetProgramInfoLog(p));return p;}
