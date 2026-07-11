@@ -25,6 +25,18 @@ struct TileHeader {
     std::uint64_t codecId{};
 };
 
+struct SphericalPoint {
+    float rho{};
+    float azimuth{};
+    float polar{};
+};
+
+struct Point {
+    float x{};
+    float y{};
+    float z{};
+};
+
 struct ComponentBlocks {
     std::uint32_t id{};
     std::vector<BlockDescriptor> blocks;
@@ -64,6 +76,11 @@ private:
 [[nodiscard]] std::vector<std::uint8_t> decodeTilePayload(
     BinaryFile& file, const BlockDescriptor& block,
     const TileHeader& header);
+[[nodiscard]] std::vector<SphericalPoint> decodeSphericalLine(
+    BinaryFile& file, const BlockDirectory& directory,
+    std::uint32_t scanWidth, std::uint32_t scanHeight,
+    std::uint32_t lineIndex);
+[[nodiscard]] Point sphericalToXyz(const SphericalPoint& point);
 [[nodiscard]] std::string validateBlockDirectory(
     const BlockDirectory& directory, std::uint64_t fileSize);
 

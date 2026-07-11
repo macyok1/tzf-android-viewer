@@ -1,7 +1,9 @@
 #include "tzf_core.h"
 
+#include <algorithm>
 #include <limits>
 #include <cstring>
+#include <cmath>
 #include <sstream>
 #include <stdexcept>
 #include <utility>
@@ -65,6 +67,16 @@ void appendCopy(std::vector<std::uint8_t>& output, std::uint32_t offset,
     for (std::uint32_t i = 0; i < length; ++i) {
         output.push_back(output[output.size() - offset]);
     }
+}
+
+const ComponentBlocks& requireComponent(const BlockDirectory& directory,
+                                        std::uint32_t id) {
+    for (const auto& component : directory.components) {
+        if (component.id == id) {
+            return component;
+        }
+    }
+    throw std::runtime_error("required TZF component is missing");
 }
 
 } // namespace
@@ -276,6 +288,79 @@ std::vector<std::uint8_t> decodeTilePayload(BinaryFile& file,
         return undoTransposeDerive(decoded, header.width, header.height);
     }
     return decoded;
+}
+
+std::vector<SphericalPoint> decodeSphericalLine(
+    BinaryFile& file, const BlockDirectory& directory,
+    std::uint32_t scanWidth, std::uint32_t scanHeight,
+    std::uint32_t lineIndex) {
+    constexpr std::uint32_t tileSize = 512;
+    if (scanWidth == 0 || scanHeight == 0 || lineIndex >= scanHeight) {
+        throw std::runtime_error("invalid TZF scan line dimensions");
+    }
+    const auto tileColumns = (scanWidth + tileSize - 1U) / tileSize;
+    const auto tileRows = (scanHeight + tileSize - 1U) / tileSize;
+    const auto tileCount = static_cast<std::uint64_t>(tileColumns) * tileRows;
+    const auto& rhoComponent = requireComponent(directory, 1);
+    const auto& polarComponent = requireComponent(directory, 2);
+    const auto& azimuthComponent = requireComponent(directory, 3);
+    if (rhoComponent.blocks.size() != tileCount ||
+        polarComponent.blocks.size() != tileCount ||
+        azimuthComponent.blocks.size() != tileCount) {
+        throw std::runtime_error("TZF component tile count does not match scan");
+    }
+
+    std::vector<SphericalPoint> result(scanWidth);
+    const auto tileY = lineIndex / tileSize;
+    const auto localY = lineIndex % tileSize;
+    for (std::uint32_t tileX = 0; tileX < tileColumns; ++tileX) {
+        const auto tileIndex = static_cast<std::size_t>(tileX) * tileRows + tileY;
+        const std::array<const BlockDescriptor*, 3> blocks{
+            &rhoComponent.blocks[tileIndex],
+            &polarComponent.blocks[tileIndex],
+            &azimuthComponent.blocks[tileIndex]};
+        std::array<TileHeader, 3> headers;
+        std::array<std::vector<std::uint8_t>, 3> channels;
+        for (std::size_t channel = 0; channel < channels.size(); ++channel) {
+            headers[channel] = parseTileHeader(file, *blocks[channel]);
+            channels[channel] =
+                decodeTilePayload(file, *blocks[channel], headers[channel]);
+            if (headers[channel].width != tileSize ||
+                headers[channel].height != tileSize ||
+                headers[channel].scale == 0.0F) {
+                throw std::runtime_error("unsupported TZF tile geometry or scale");
+            }
+        }
+
+        const auto firstX = tileX * tileSize;
+        const auto xCount = std::min(tileSize, scanWidth - firstX);
+        for (std::uint32_t localX = 0; localX < xCount; ++localX) {
+            const auto valueIndex =
+                static_cast<std::size_t>(localX) * tileSize + localY;
+            const auto rho = readU32(channels[0].data() + valueIndex * 4U);
+            const auto polar = readU32(channels[1].data() + valueIndex * 4U);
+            const auto azimuth =
+                readU32(channels[2].data() + valueIndex * 4U);
+            auto& point = result[firstX + localX];
+            if (rho != 0) {
+                point.rho = static_cast<float>(rho) / headers[0].scale;
+                point.polar =
+                    static_cast<float>(polar) / headers[1].scale;
+                point.azimuth =
+                    static_cast<float>(azimuth) / headers[2].scale;
+            }
+        }
+    }
+    return result;
+}
+
+Point sphericalToXyz(const SphericalPoint& point) {
+    const auto sinPolar = std::sin(point.polar);
+    return {
+        point.rho * sinPolar * std::cos(point.azimuth),
+        point.rho * sinPolar * std::sin(point.azimuth),
+        point.rho * std::cos(point.polar),
+    };
 }
 
 std::string validateBlockDirectory(const BlockDirectory& directory,

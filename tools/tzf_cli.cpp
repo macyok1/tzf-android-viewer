@@ -2,6 +2,7 @@
 
 #include <charconv>
 #include <iomanip>
+#include <fstream>
 #include <iostream>
 #include <stdexcept>
 #include <string_view>
@@ -45,11 +46,28 @@ void printComponent(tzf::BinaryFile& file,
     }
 }
 
+void writeLine(std::ostream& output,
+               const std::vector<tzf::SphericalPoint>& points) {
+    output << "row,rho,azimuth,polar,x,y,z\n" << std::setprecision(9);
+    for (std::size_t i = 0; i < points.size(); ++i) {
+        const auto xyz = tzf::sphericalToXyz(points[i]);
+        output << i << ',' << points[i].rho << ',' << points[i].azimuth << ','
+               << points[i].polar << ',' << xyz.x << ',' << xyz.y << ','
+               << xyz.z << '\n';
+    }
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
-    if (argc < 3 || argc > 4) {
-        std::cerr << "usage: tzf-cli <file.tzf> <directory-offset> [component-index]\n";
+    const auto lineMode = argc >= 4 && std::string_view(argv[3]) == "--line";
+    if ((!lineMode && (argc < 3 || argc > 4)) ||
+        (lineMode && argc != 7 && argc != 8)) {
+        std::cerr
+            << "usage:\n"
+            << "  tzf-cli <file.tzf> <directory-offset> [component-index]\n"
+            << "  tzf-cli <file.tzf> <directory-offset> --line "
+               "<width> <height> <line> [output.csv]\n";
         return 2;
     }
     try {
@@ -67,9 +85,26 @@ int main(int argc, char** argv) {
                   << "header-value: " << directory.headerValue << "\n"
                   << "payload-size: " << directory.payloadSize << "\n"
                   << "component-count: " << directory.componentCount << "\n";
-        printComponent(
-            file, directory,
-            argc == 4 ? static_cast<std::size_t>(parseOffset(argv[3])) : 0U);
+        if (lineMode) {
+            const auto points = tzf::decodeSphericalLine(
+                file, directory, static_cast<std::uint32_t>(parseOffset(argv[4])),
+                static_cast<std::uint32_t>(parseOffset(argv[5])),
+                static_cast<std::uint32_t>(parseOffset(argv[6])));
+            if (argc == 8) {
+                std::ofstream output(argv[7], std::ios::trunc);
+                if (!output) {
+                    throw std::runtime_error("cannot create CSV output");
+                }
+                writeLine(output, points);
+            } else {
+                writeLine(std::cout, points);
+            }
+        } else {
+            printComponent(
+                file, directory,
+                argc == 4 ? static_cast<std::size_t>(parseOffset(argv[3]))
+                          : 0U);
+        }
         return 0;
     } catch (const std::exception& error) {
         std::cerr << "error: " << error.what() << "\n";

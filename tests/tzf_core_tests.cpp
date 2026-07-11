@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <cmath>
 #include <vector>
 
 namespace {
@@ -55,6 +56,13 @@ std::filesystem::path writeFixture() {
 } // namespace
 
 int main() {
+    const tzf::SphericalPoint spherical{16861.1F, 2.5112741F,
+                                        0.001558F};
+    const auto xyz = tzf::sphericalToXyz(spherical);
+    assert(std::abs(xyz.x - (-21.2216148F)) < 0.001F);
+    assert(std::abs(xyz.y - 15.4833479F) < 0.001F);
+    assert(std::abs(xyz.z - 16861.0801F) < 0.01F);
+
     const std::vector<std::uint8_t> snappy{
         10, 0x10, 'h', 'e', 'l', 'l', 'o', 0x12, 5, 0};
     const auto uncompressed = tzf::decodeSnappy(snappy);

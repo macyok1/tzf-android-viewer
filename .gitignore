@@ -6,3 +6,9 @@ app/build/
 *.iml
 testdata/
 build-artifact/
+/trace-*.csv
+/trace-*.err
+/trace-*.etl
+/trace-*.log
+/trace-*.txt
+/trace-fileio.etl.NGENPDB/
