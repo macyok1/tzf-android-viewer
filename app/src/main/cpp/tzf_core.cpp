@@ -94,6 +94,38 @@ BinaryFile::BinaryFile(const std::filesystem::path& path)
     size_ = static_cast<std::uint64_t>(end);
 }
 
+FileHeader parseFileHeader(BinaryFile& file) {
+    constexpr std::uint32_t minimumHeaderSize = 0x4c;
+    const auto bytes = file.read(0, minimumHeaderSize);
+    FileHeader header;
+    header.headerSize = readU32(bytes.data() + 0x0c);
+    header.scanInfoOffset = readU64(bytes.data() + 0x10);
+    header.fileEndOffset = readU64(bytes.data() + 0x28);
+    header.blockDirectoryOffset = readU64(bytes.data() + 0x40);
+    if (header.headerSize < minimumHeaderSize ||
+        header.headerSize > file.size() ||
+        header.scanInfoOffset >= file.size() ||
+        header.blockDirectoryOffset >= file.size() ||
+        header.fileEndOffset > file.size()) {
+        throw std::runtime_error("invalid TZF main header offsets");
+    }
+    return header;
+}
+
+ScanInfo parseScanInfo(BinaryFile& file, std::uint64_t scanInfoOffset) {
+    constexpr std::uint32_t requiredSize = 0x40;
+    const auto bytes = file.read(scanInfoOffset, requiredSize);
+    ScanInfo info;
+    info.width = readU32(bytes.data() + 0x30);
+    info.height = readU32(bytes.data() + 0x34);
+    info.tileSize = readU32(bytes.data() + 0x38);
+    info.validPointCount = readU32(bytes.data() + 0x3c);
+    if (info.width == 0 || info.height == 0 || info.tileSize == 0) {
+        throw std::runtime_error("invalid TZF scan dimensions");
+    }
+    return info;
+}
+
 std::vector<std::uint8_t> BinaryFile::read(std::uint64_t offset,
                                            std::uint64_t length) {
     if (!rangeFits(offset, length, size_)) {
@@ -352,6 +384,18 @@ std::vector<SphericalPoint> decodeSphericalLine(
         }
     }
     return result;
+}
+
+std::vector<SphericalPoint> decodeSphericalLine(
+    BinaryFile& file, const FileHeader& fileHeader,
+    const ScanInfo& scanInfo, const BlockDirectory& directory,
+    std::uint32_t lineIndex) {
+    (void)fileHeader;
+    if (scanInfo.tileSize != 512) {
+        throw std::runtime_error("unsupported TZF tile size");
+    }
+    return decodeSphericalLine(file, directory, scanInfo.width,
+                               scanInfo.height, lineIndex);
 }
 
 Point sphericalToXyz(const SphericalPoint& point) {

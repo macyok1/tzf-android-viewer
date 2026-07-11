@@ -37,6 +37,20 @@ struct Point {
     float z{};
 };
 
+struct FileHeader {
+    std::uint32_t headerSize{};
+    std::uint64_t scanInfoOffset{};
+    std::uint64_t fileEndOffset{};
+    std::uint64_t blockDirectoryOffset{};
+};
+
+struct ScanInfo {
+    std::uint32_t width{};
+    std::uint32_t height{};
+    std::uint32_t tileSize{};
+    std::uint32_t validPointCount{};
+};
+
 struct ComponentBlocks {
     std::uint32_t id{};
     std::vector<BlockDescriptor> blocks;
@@ -66,6 +80,9 @@ private:
 
 [[nodiscard]] BlockDirectory parseBlockDirectory(BinaryFile& file,
                                                  std::uint64_t tableOffset);
+[[nodiscard]] FileHeader parseFileHeader(BinaryFile& file);
+[[nodiscard]] ScanInfo parseScanInfo(BinaryFile& file,
+                                     std::uint64_t scanInfoOffset);
 [[nodiscard]] TileHeader parseTileHeader(BinaryFile& file,
                                          const BlockDescriptor& block);
 [[nodiscard]] std::vector<std::uint8_t> decodeSnappy(
@@ -79,6 +96,10 @@ private:
 [[nodiscard]] std::vector<SphericalPoint> decodeSphericalLine(
     BinaryFile& file, const BlockDirectory& directory,
     std::uint32_t scanWidth, std::uint32_t scanHeight,
+    std::uint32_t lineIndex);
+[[nodiscard]] std::vector<SphericalPoint> decodeSphericalLine(
+    BinaryFile& file, const FileHeader& fileHeader,
+    const ScanInfo& scanInfo, const BlockDirectory& directory,
     std::uint32_t lineIndex);
 [[nodiscard]] Point sphericalToXyz(const SphericalPoint& point);
 [[nodiscard]] std::string validateBlockDirectory(

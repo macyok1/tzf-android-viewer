@@ -60,19 +60,25 @@ void writeLine(std::ostream& output,
 } // namespace
 
 int main(int argc, char** argv) {
-    const auto lineMode = argc >= 4 && std::string_view(argv[3]) == "--line";
-    if ((!lineMode && (argc < 3 || argc > 4)) ||
-        (lineMode && argc != 7 && argc != 8)) {
+    const auto lineMode = argc >= 3 && std::string_view(argv[2]) == "--line";
+    const auto componentMode =
+        argc >= 3 && std::string_view(argv[2]) == "--component";
+    if ((lineMode && argc != 4 && argc != 5) ||
+        (componentMode && argc != 4) ||
+        (!lineMode && !componentMode && argc != 2)) {
         std::cerr
             << "usage:\n"
-            << "  tzf-cli <file.tzf> <directory-offset> [component-index]\n"
-            << "  tzf-cli <file.tzf> <directory-offset> --line "
-               "<width> <height> <line> [output.csv]\n";
+            << "  tzf-cli <file.tzf>\n"
+            << "  tzf-cli <file.tzf> --component <component-index>\n"
+            << "  tzf-cli <file.tzf> --line <line> [output.csv]\n";
         return 2;
     }
     try {
         tzf::BinaryFile file(argv[1]);
-        const auto directory = tzf::parseBlockDirectory(file, parseOffset(argv[2]));
+        const auto header = tzf::parseFileHeader(file);
+        const auto scanInfo = tzf::parseScanInfo(file, header.scanInfoOffset);
+        const auto directory =
+            tzf::parseBlockDirectory(file, header.blockDirectoryOffset);
         const auto validation =
             tzf::validateBlockDirectory(directory, file.size());
         if (!validation.empty()) {
@@ -84,14 +90,15 @@ int main(int argc, char** argv) {
                   << directory.fileOffset << std::dec << "\n"
                   << "header-value: " << directory.headerValue << "\n"
                   << "payload-size: " << directory.payloadSize << "\n"
-                  << "component-count: " << directory.componentCount << "\n";
+                  << "component-count: " << directory.componentCount << "\n"
+                  << "scan-size: " << scanInfo.width << "x" << scanInfo.height
+                  << "\nvalid-points: " << scanInfo.validPointCount << "\n";
         if (lineMode) {
             const auto points = tzf::decodeSphericalLine(
-                file, directory, static_cast<std::uint32_t>(parseOffset(argv[4])),
-                static_cast<std::uint32_t>(parseOffset(argv[5])),
-                static_cast<std::uint32_t>(parseOffset(argv[6])));
-            if (argc == 8) {
-                std::ofstream output(argv[7], std::ios::trunc);
+                file, header, scanInfo, directory,
+                static_cast<std::uint32_t>(parseOffset(argv[3])));
+            if (argc == 5) {
+                std::ofstream output(argv[4], std::ios::trunc);
                 if (!output) {
                     throw std::runtime_error("cannot create CSV output");
                 }
@@ -99,11 +106,10 @@ int main(int argc, char** argv) {
             } else {
                 writeLine(std::cout, points);
             }
-        } else {
+        } else if (componentMode) {
             printComponent(
                 file, directory,
-                argc == 4 ? static_cast<std::size_t>(parseOffset(argv[3]))
-                          : 0U);
+                static_cast<std::size_t>(parseOffset(argv[3])));
         }
         return 0;
     } catch (const std::exception& error) {
