@@ -88,6 +88,8 @@ final class PointCloudView extends GLSurfaceView {
         private float[] cloud;
         private int surfaceWidth, surfaceHeight;
         private final float[] measure = new float[6];
+        private final float[] pickInput = new float[4];
+        private final float[] pickOutput = new float[4];
         private int measureCount;
         boolean orthographic;
         private int pointCount;
@@ -147,7 +149,7 @@ final class PointCloudView extends GLSurfaceView {
             GLES20.glDisableVertexAttribArray(position);
         }
         void clearMeasure(){measureCount=0;}
-        float[] pick(float sx,float sy){ if(cloud==null) return null; int best=-1; float bestD=2500f; float[] v=new float[4]; for(int i=0;i<cloud.length;i+=3){ Matrix.multiplyMV(v,0,mvp,0,new float[]{cloud[i],cloud[i+1],cloud[i+2],1},0); if(v[3]<=0)continue; float px=(v[0]/v[3]*.5f+.5f)*surfaceWidth, py=(1-(v[1]/v[3]*.5f+.5f))*surfaceHeight; float d=(px-sx)*(px-sx)+(py-sy)*(py-sy); if(d<bestD){bestD=d;best=i;} } if(best<0)return null; System.arraycopy(cloud,best,measure,measureCount*3,3); measureCount++; if(measureCount<2)return null; float dx=measure[3]-measure[0],dy=measure[4]-measure[1],dz=measure[5]-measure[2]; return new float[]{(float)Math.sqrt(dx*dx+dy*dy+dz*dz),Math.abs(dz)}; }
+        float[] pick(float sx,float sy){ if(cloud==null) return null; int best=-1; float bestD=2500f; for(int i=0;i<cloud.length;i+=3){ pickInput[0]=cloud[i];pickInput[1]=cloud[i+1];pickInput[2]=cloud[i+2];pickInput[3]=1f; Matrix.multiplyMV(pickOutput,0,mvp,0,pickInput,0); if(pickOutput[3]<=0)continue; float px=(pickOutput[0]/pickOutput[3]*.5f+.5f)*surfaceWidth, py=(1-(pickOutput[1]/pickOutput[3]*.5f+.5f))*surfaceHeight; float d=(px-sx)*(px-sx)+(py-sy)*(py-sy); if(d<bestD){bestD=d;best=i;} } if(best<0)return null; System.arraycopy(cloud,best,measure,measureCount*3,3); measureCount++; if(measureCount<2)return null; float dx=measure[3]-measure[0],dy=measure[4]-measure[1],dz=measure[5]-measure[2]; return new float[]{(float)Math.sqrt(dx*dx+dy*dy+dz*dz),Math.abs(dz)}; }
         private void setProjection(int w,int h){float a=(float)w/Math.max(1,h); if(orthographic) Matrix.orthoM(projection,0,-2*a,2*a,-2,2,.1f,20f); else Matrix.perspectiveM(projection,0,45f,a,.1f,20f);}
 
         private static int link(String vertex, String fragment) {
