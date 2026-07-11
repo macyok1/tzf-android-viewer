@@ -19,6 +19,9 @@ import java.io.InputStream;
 import java.util.Arrays;
 import java.util.Locale;
 import java.util.UUID;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -32,6 +35,7 @@ public final class MainActivity extends Activity {
     private final AtomicInteger primaryGeneration = new AtomicInteger();
     private final AtomicInteger secondaryGeneration = new AtomicInteger();
     private final AtomicInteger registrationGeneration = new AtomicInteger();
+    private final ConcurrentHashMap<String,AtomicInteger> sceneGenerations=new ConcurrentHashMap<>();
     private final float[] transform = new float[4];
     private PointCloudView cloud;
     private TextView status, transformSummary;
@@ -120,6 +124,7 @@ public final class MainActivity extends Activity {
         setMode(false);
         setRegistrationRunning(false);
         syncTransform();
+        restoreProjectScans();
     }
 
     private void setMode(boolean stitching) {
@@ -256,7 +261,9 @@ public final class MainActivity extends Activity {
     }
 
     private ProjectModel.Scan rememberScan(Uri uri){for(ProjectModel.Node node:project.root.children())if(node instanceof ProjectModel.Scan&&uri.toString().equals(((ProjectModel.Scan)node).uri))return (ProjectModel.Scan)node;String name=uri.getLastPathSegment();if(name==null||name.isEmpty())name="Scan "+(project.scanCount()+1);int slash=Math.max(name.lastIndexOf('/'),name.lastIndexOf(':'));if(slash>=0&&slash+1<name.length())name=name.substring(slash+1);ProjectModel.Scan scan=new ProjectModel.Scan(UUID.randomUUID().toString(),name);scan.uri=uri.toString();int[] colors={0xff38c9e8,0xffffb44a,0xff8ee06f,0xffd58cff,0xffff718a};scan.color=colors[project.scanCount()%colors.length];project.root.add(scan);project.touch(System.currentTimeMillis());ScanTreePanel tree=findViewById(R.id.scanTree);if(tree!=null)tree.refresh();return scan;}
-    private void decodeScene(Uri uri,ProjectModel.Scan scan){int generation=primaryGeneration.incrementAndGet();status.setText("Загружаем "+scan.name+"…");worker.execute(()->{try{File local=copyToCache(uri,"scene-"+scan.id+".tzf");int quota=Math.max(20_000,effectiveBudget()/Math.max(1,project.scanCount()));float[] xyz=TzfNative.decodePreview(local.getAbsolutePath(),quota,1);scan.sourcePointCount=Math.max(scan.sourcePointCount,xyz.length/3);float[] world=scan.worldTransform();runOnUiThread(()->{if(primaryGeneration.get()!=generation)return;cloud.setSceneCloud(scan.id,xyz,world,scan.color,scan.visible);status.setText(scan.name+": "+xyz.length/3+" точек");});}catch(Exception e){runOnUiThread(()->status.setText("Скан не загружен: "+e.getMessage()));}});}
+    private void decodeScene(Uri uri,ProjectModel.Scan scan){AtomicInteger counter=sceneGenerations.computeIfAbsent(scan.id,k->new AtomicInteger());int generation=counter.incrementAndGet();status.setText("Загружаем "+scan.name+"…");worker.execute(()->{try{File local=copyToCache(uri,"scene-"+scan.id+".tzf");int quota=Math.max(20_000,effectiveBudget()/Math.max(1,project.scanCount()));float[] xyz=TzfNative.decodePreview(local.getAbsolutePath(),quota,1);scan.sourcePointCount=Math.max(scan.sourcePointCount,xyz.length/3);float[] world=scan.worldTransform();runOnUiThread(()->{if(counter.get()!=generation)return;cloud.setSceneCloud(scan.id,xyz,world,scan.color,scan.visible);status.setText(scan.name+": "+xyz.length/3+" точек");});}catch(Exception e){runOnUiThread(()->{if(counter.get()==generation)status.setText(scan.name+" недоступен: "+e.getMessage());});}});}
+    private void restoreProjectScans(){List<ProjectModel.Scan> scans=new ArrayList<>();collectScans(project.root,scans);for(ProjectModel.Scan scan:scans)if(scan.uri!=null&&!scan.uri.isEmpty())decodeScene(Uri.parse(scan.uri),scan);}
+    private void collectScans(ProjectModel.Group group,List<ProjectModel.Scan> out){for(ProjectModel.Node node:group.children())if(node instanceof ProjectModel.Scan)out.add((ProjectModel.Scan)node);else collectScans((ProjectModel.Group)node,out);}
 
     private void decode(Uri uri, boolean secondary) {
         AtomicInteger counter = secondary ? secondaryGeneration : primaryGeneration;
@@ -308,5 +315,5 @@ public final class MainActivity extends Activity {
     @Override protected void onSaveInstanceState(Bundle out) { super.onSaveInstanceState(out); out.putFloatArray(STATE_TRANSFORM, transform.clone()); }
     @Override protected void onResume() { super.onResume(); if (cloud != null) cloud.onResume(); }
     @Override protected void onPause() { if(project!=null){project.touch(System.currentTimeMillis());try{projectStore.save(project);}catch(IOException ignored){}}if (cloud != null) cloud.onPause(); super.onPause(); }
-    @Override protected void onDestroy() { primaryGeneration.incrementAndGet(); secondaryGeneration.incrementAndGet(); registrationGeneration.incrementAndGet(); worker.shutdownNow(); super.onDestroy(); }
+    @Override protected void onDestroy() { primaryGeneration.incrementAndGet(); secondaryGeneration.incrementAndGet(); registrationGeneration.incrementAndGet();for(AtomicInteger generation:sceneGenerations.values())generation.incrementAndGet(); worker.shutdownNow(); super.onDestroy(); }
 }
