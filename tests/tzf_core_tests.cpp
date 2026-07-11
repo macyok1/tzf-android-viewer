@@ -124,12 +124,19 @@ int main() {
     }
     constexpr double angle = 7.0 * 3.14159265358979323846 / 180.0;
     const double cosine = std::cos(angle), sine = std::sin(angle);
+    tzf::Point movingCenter{};
+    for (const auto point : moving) {
+        movingCenter.x += point.x; movingCenter.y += point.y; movingCenter.z += point.z;
+    }
+    movingCenter.x /= moving.size(); movingCenter.y /= moving.size(); movingCenter.z /= moving.size();
     std::vector<tzf::Point> reference;
     reference.reserve(moving.size());
     for (const auto point : moving) {
+        const double x = point.x - movingCenter.x;
+        const double y = point.y - movingCenter.y;
         reference.push_back({
-            static_cast<float>(cosine * point.x - sine * point.y + 0.15),
-            static_cast<float>(sine * point.x + cosine * point.y - 0.08),
+            static_cast<float>(movingCenter.x + cosine * x - sine * y + 0.15),
+            static_cast<float>(movingCenter.y + sine * x + cosine * y - 0.08),
             point.z + 0.04F});
     }
     tzf::RegistrationOptions registrationOptions;
