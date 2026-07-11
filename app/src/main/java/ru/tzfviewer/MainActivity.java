@@ -23,6 +23,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public final class MainActivity extends Activity {
+    static final String EXTRA_PROJECT_ID = "project_id";
     private static final int PICK_PRIMARY = 101, PICK_SECONDARY = 102;
     private static final int PREVIEW_LIMIT = 150_000;
     private static final String STATE_TRANSFORM = "transform";
@@ -38,9 +39,16 @@ public final class MainActivity extends Activity {
     private ProgressBar registrationProgress;
     private View viewerTools, stitchingTools;
     private volatile File primaryFile, secondaryFile;
+    private ProjectStore projectStore;
+    private ProjectModel project;
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
+        projectStore = new ProjectStore(getFilesDir());
+        String projectId = getIntent().getStringExtra(EXTRA_PROJECT_ID);
+        if (projectId == null) { finish(); return; }
+        try { project = projectStore.load(projectId); }
+        catch (IOException | IllegalArgumentException error) { finish(); return; }
         setContentView(R.layout.activity_main);
         cloud = new PointCloudView(this);
         cloud.setTransformListener(values -> {
@@ -64,7 +72,8 @@ public final class MainActivity extends Activity {
             @Override public void onPreset(float yaw, float pitch) { cloud.setPreset(yaw, pitch); }
             @Override public void onRotate(float deltaYaw, float deltaPitch) { cloud.rotateCamera(deltaYaw, deltaPitch); }
         });
-        cloud.setOrientationListener(orientation::setOrientation);
+        cloud.setOrientationListener((yaw,pitch)->{orientation.setOrientation(yaw,pitch);project.cameraYaw=yaw;project.cameraPitch=pitch;});
+        cloud.restoreOrientation(project.cameraYaw, project.cameraPitch);
 
         findViewById(R.id.modeViewer).setOnClickListener(v -> setMode(false));
         findViewById(R.id.modeStitching).setOnClickListener(v -> setMode(true));
@@ -275,6 +284,6 @@ public final class MainActivity extends Activity {
 
     @Override protected void onSaveInstanceState(Bundle out) { super.onSaveInstanceState(out); out.putFloatArray(STATE_TRANSFORM, transform.clone()); }
     @Override protected void onResume() { super.onResume(); if (cloud != null) cloud.onResume(); }
-    @Override protected void onPause() { if (cloud != null) cloud.onPause(); super.onPause(); }
+    @Override protected void onPause() { if(project!=null){project.touch(System.currentTimeMillis());try{projectStore.save(project);}catch(IOException ignored){}}if (cloud != null) cloud.onPause(); super.onPause(); }
     @Override protected void onDestroy() { primaryGeneration.incrementAndGet(); secondaryGeneration.incrementAndGet(); registrationGeneration.incrementAndGet(); worker.shutdownNow(); super.onDestroy(); }
 }

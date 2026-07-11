@@ -51,6 +51,7 @@ public final class PointCloudView extends GLSurfaceView {
         cameraAnimator.addUpdateListener(a->{float t=(float)a.getAnimatedValue();float eased=t*t*(3f-2f*t);applyOrientation(startYaw+deltaYaw*eased,startPitch+(targetPitch-startPitch)*eased);});
         cameraAnimator.start();
     }
+    void restoreOrientation(float yaw,float pitch){cancelCameraAnimation();applyOrientation(yaw,pitch);}
     void rotateCamera(float deltaYaw,float deltaPitch){cancelCameraAnimation();applyOrientation(uiYaw+deltaYaw,uiPitch+deltaPitch);}
     private void applyOrientation(float yaw,float pitch){uiYaw=ViewCubeMath.normalizeYaw(yaw);uiPitch=ViewCubeMath.clampPitch(pitch);float y=uiYaw,p=uiPitch;queueEvent(()->{renderer.yaw=y;renderer.pitch=p;});requestRender();notifyOrientation();}
     private void notifyOrientation(){if(orientationListener!=null)orientationListener.onOrientation(uiYaw,uiPitch);}
