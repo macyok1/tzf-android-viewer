@@ -11,8 +11,7 @@
         <Button android:id="@+id/modeStitching" style="@style/ToolButton" android:layout_width="wrap_content" android:layout_height="match_parent" android:text="@string/mode_stitching"/>
     </LinearLayout>
 
-    <FrameLayout android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1">
-        <ru.tzfviewer.PointCloudView android:id="@+id/cloud" android:layout_width="match_parent" android:layout_height="match_parent"/>
+    <FrameLayout android:id="@+id/viewportContainer" android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1">
         <ru.tzfviewer.OrientationCubeView android:id="@+id/orientation" android:layout_width="112dp" android:layout_height="112dp" android:layout_gravity="top|end" android:layout_margin="12dp"/>
         <TextView android:id="@+id/status" android:layout_width="wrap_content" android:layout_height="wrap_content"
             android:layout_gravity="bottom|start" android:layout_margin="12dp" android:maxWidth="320dp"

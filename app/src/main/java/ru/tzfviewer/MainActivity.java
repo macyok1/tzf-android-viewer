@@ -10,6 +10,7 @@ import android.view.View;
 import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.EditText;
+import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
@@ -40,7 +41,10 @@ public final class MainActivity extends Activity {
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
         setContentView(R.layout.activity_main);
-        cloud = findViewById(R.id.cloud);
+        cloud = new PointCloudView(this);
+        ((FrameLayout)findViewById(R.id.viewportContainer)).addView(cloud, 0,
+                new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT,
+                        FrameLayout.LayoutParams.MATCH_PARENT));
         status = findViewById(R.id.status);
         transformSummary = findViewById(R.id.transformSummary);
         translationStep = findViewById(R.id.translationStep);
