@@ -41,6 +41,8 @@ public final class PointCloudView extends GLSurfaceView {
     void setPrimaryVisible(boolean v){queueEvent(()->renderer.primaryVisible=v);requestRender();}
     void setSecondaryVisible(boolean v){queueEvent(()->renderer.secondaryVisible=v);requestRender();}
     void fitView(){queueEvent(()->renderer.zoom=1f);requestRender();}
+    void setPointSize(float size){queueEvent(()->renderer.pointSize=Math.max(1f,Math.min(5f,size)));requestRender();}
+    void setGridVisible(boolean visible){queueEvent(()->renderer.gridVisible=visible);requestRender();}
     void setPreset(float yaw,float pitch){
         cancelCameraAnimation();
         final float startYaw=uiYaw,startPitch=uiPitch;
@@ -84,8 +86,8 @@ public final class PointCloudView extends GLSurfaceView {
         private int pointCount,secondaryCount,gridCount,width,height,program,position,matrix,color,size;
         private float cx,cy,cz,span=1f,secondaryCx,secondaryCy,secondaryCz;
         private boolean inverseMvpValid;
-        boolean primaryVisible=true,secondaryVisible=true,orthographic;
-        float yaw=25f,pitch=-18f,zoom=1f;
+        boolean primaryVisible=true,secondaryVisible=true,orthographic,gridVisible=true;
+        float yaw=25f,pitch=-18f,zoom=1f,pointSize=2f;
 
         static FloatBuffer direct(int floats){return ByteBuffer.allocateDirect(floats*4).order(ByteOrder.nativeOrder()).asFloatBuffer();}
         void setTransform(float[] v){System.arraycopy(v,0,transform,0,Math.min(4,v.length));}
@@ -98,8 +100,8 @@ public final class PointCloudView extends GLSurfaceView {
         @Override public void onSurfaceCreated(javax.microedition.khronos.opengles.GL10 gl,javax.microedition.khronos.egl.EGLConfig cfg){GLES20.glClearColor(.015f,.025f,.04f,1);GLES20.glEnable(GLES20.GL_DEPTH_TEST);program=link(VS,FS);position=GLES20.glGetAttribLocation(program,"aPosition");matrix=GLES20.glGetUniformLocation(program,"uMvp");color=GLES20.glGetUniformLocation(program,"uColor");size=GLES20.glGetUniformLocation(program,"uSize");}
         @Override public void onSurfaceChanged(javax.microedition.khronos.opengles.GL10 gl,int w,int h){width=w;height=h;GLES20.glViewport(0,0,w,h);}
         @Override public void onDrawFrame(javax.microedition.khronos.opengles.GL10 gl){
-            GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT|GLES20.GL_DEPTH_BUFFER_BIT);if(points==null)return;setMatrices();GLES20.glUseProgram(program);GLES20.glEnableVertexAttribArray(position);GLES20.glUniform1f(size,2.2f);
-            if(gridBuffer!=null){draw(gridBuffer,gridCount,GLES20.GL_LINES,gridMvp,.20f,.28f,.34f,1);drawAxes();}
+            GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT|GLES20.GL_DEPTH_BUFFER_BIT);if(points==null)return;setMatrices();GLES20.glUseProgram(program);GLES20.glEnableVertexAttribArray(position);GLES20.glUniform1f(size,pointSize);
+            if(gridVisible&&gridBuffer!=null){draw(gridBuffer,gridCount,GLES20.GL_LINES,gridMvp,.20f,.28f,.34f,1);drawAxes();}
             if(primaryVisible)draw(points,pointCount,GLES20.GL_POINTS,primaryMvp,.12f,.78f,1,1);
             if(secondaryVisible&&secondaryPoints!=null){draw(secondaryPoints,secondaryCount,GLES20.GL_POINTS,secondaryMvp,1,.58f,.12f,1);drawGizmo();}
             if(measureCount==2){measureBuffer.position(0);measureBuffer.put(measure).position(0);GLES20.glLineWidth(3);draw(measureBuffer,2,GLES20.GL_LINES,primaryMvp,1,1,1,1);}

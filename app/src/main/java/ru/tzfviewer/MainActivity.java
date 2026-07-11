@@ -18,6 +18,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.Arrays;
 import java.util.Locale;
+import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -25,7 +26,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 public final class MainActivity extends Activity {
     static final String EXTRA_PROJECT_ID = "project_id";
     private static final int PICK_PRIMARY = 101, PICK_SECONDARY = 102;
-    private static final int PREVIEW_LIMIT = 150_000;
+    private static final int[] POINT_BUDGETS={150_000,300_000,600_000,1_200_000,2_500_000,5_000_000,10_000_000,-1};
     private static final String STATE_TRANSFORM = "transform";
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private final AtomicInteger primaryGeneration = new AtomicInteger();
@@ -41,6 +42,8 @@ public final class MainActivity extends Activity {
     private volatile File primaryFile, secondaryFile;
     private ProjectStore projectStore;
     private ProjectModel project;
+    private final int[] pointSizes={1,2,3,5};
+    private int budgetIndex,pointSizeIndex;
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
@@ -82,6 +85,17 @@ public final class MainActivity extends Activity {
         findViewById(R.id.openSecondary).setOnClickListener(v -> selectTzf(PICK_SECONDARY));
         findViewById(R.id.projection).setOnClickListener(v -> cloud.toggleProjection());
         findViewById(R.id.fit).setOnClickListener(v -> cloud.fitView());
+        findViewById(R.id.compactOpen).setOnClickListener(v -> selectTzf(PICK_PRIMARY));
+        findViewById(R.id.compactFit).setOnClickListener(v -> cloud.fitView());
+        findViewById(R.id.compactProjection).setOnClickListener(v -> cloud.toggleProjection());
+        Button pointSizeButton=findViewById(R.id.pointSize),budgetButton=findViewById(R.id.pointBudget),gridButton=findViewById(R.id.grid);
+        for(int i=0;i<POINT_BUDGETS.length;i++)if(POINT_BUDGETS[i]==project.pointBudget)budgetIndex=i;
+        for(int i=0;i<pointSizes.length;i++)if(pointSizes[i]==project.pointSize)pointSizeIndex=i;
+        pointSizeButton.setOnClickListener(v->{pointSizeIndex=(pointSizeIndex+1)%pointSizes.length;project.pointSize=pointSizes[pointSizeIndex];cloud.setPointSize(project.pointSize);pointSizeButton.setText("•• "+project.pointSize);});
+        budgetButton.setOnClickListener(v->{budgetIndex=(budgetIndex+1)%POINT_BUDGETS.length;project.pointBudget=POINT_BUDGETS[budgetIndex];budgetButton.setText(budgetLabel(project.pointBudget));reloadForBudget();});
+        gridButton.setSelected(project.gridVisible);gridButton.setOnClickListener(v->{project.gridVisible=!project.gridVisible;gridButton.setSelected(project.gridVisible);cloud.setGridVisible(project.gridVisible);});
+        findViewById(R.id.scans).setOnClickListener(v->status.setText("Панель сканов — следующий этап"));
+        cloud.setPointSize(project.pointSize);cloud.setGridVisible(project.gridVisible);pointSizeButton.setText("•• "+project.pointSize);budgetButton.setText(budgetLabel(project.pointBudget));
         registerButton.setOnClickListener(v -> startRegistration());
         cancelRegistration.setOnClickListener(v -> cancelRegistration());
         Button measure = findViewById(R.id.measure);
@@ -109,11 +123,16 @@ public final class MainActivity extends Activity {
     }
 
     private void setMode(boolean stitching) {
-        viewerTools.setVisibility(View.VISIBLE);
+        viewerTools.setVisibility(View.GONE);
         stitchingTools.setVisibility(stitching ? View.VISIBLE : View.GONE);
         findViewById(R.id.modeViewer).setSelected(!stitching);
         findViewById(R.id.modeStitching).setSelected(stitching);
     }
+
+    private String budgetLabel(int budget){if(budget<0)return "AUTO";if(budget>=1_000_000)return String.format(Locale.US,"%.1fM",budget/1_000_000f);return (budget/1000)+"k";}
+    private int effectiveBudget(){return project.pointBudget<0?1_200_000:project.pointBudget;}
+    private void reloadForBudget(){int visible=(primaryFile!=null?1:0)+(secondaryFile!=null?1:0);if(visible==0)return;int each=Math.max(10_000,effectiveBudget()/visible);if(primaryFile!=null)reloadLocal(primaryFile,false,each);if(secondaryFile!=null)reloadLocal(secondaryFile,true,each);}
+    private void reloadLocal(File file,boolean secondary,int limit){AtomicInteger counter=secondary?secondaryGeneration:primaryGeneration;int generation=counter.incrementAndGet();status.setText("Детализация: "+budgetLabel(project.pointBudget));worker.execute(()->{try{float[] xyz=TzfNative.decodePreview(file.getAbsolutePath(),limit,1);runOnUiThread(()->{if(counter.get()!=generation)return;if(secondary)cloud.setSecondaryCloud(xyz);else cloud.setCloud(xyz);status.setText("Показано "+xyz.length/3+" точек");});}catch(Exception error){runOnUiThread(()->{if(counter.get()==generation)status.setText("Не удалось изменить детализацию: "+error.getMessage());});}});}
 
     private void syncTransform() { cloud.setSecondaryTransform(transform); syncTransformSummary(); }
     private void syncTransformSummary() {
@@ -232,8 +251,11 @@ public final class MainActivity extends Activity {
         try { getContentResolver().takePersistableUriPermission(uri,
                 data.getFlags() & Intent.FLAG_GRANT_READ_URI_PERMISSION); }
         catch (SecurityException ignored) {}
+        rememberScan(uri);
         decode(uri, request == PICK_SECONDARY);
     }
+
+    private void rememberScan(Uri uri){for(ProjectModel.Node node:project.root.children())if(node instanceof ProjectModel.Scan&&uri.toString().equals(((ProjectModel.Scan)node).uri))return;String name=uri.getLastPathSegment();if(name==null||name.isEmpty())name="Scan "+(project.scanCount()+1);int slash=Math.max(name.lastIndexOf('/'),name.lastIndexOf(':'));if(slash>=0&&slash+1<name.length())name=name.substring(slash+1);ProjectModel.Scan scan=new ProjectModel.Scan(UUID.randomUUID().toString(),name);scan.uri=uri.toString();scan.color=project.scanCount()%2==0?0xff38c9e8:0xffffb44a;project.root.add(scan);project.touch(System.currentTimeMillis());}
 
     private void decode(Uri uri, boolean secondary) {
         AtomicInteger counter = secondary ? secondaryGeneration : primaryGeneration;
@@ -246,11 +268,11 @@ public final class MainActivity extends Activity {
                 if (secondary) secondaryFile = local; else primaryFile = local;
                 if (secondary) {
                     publishStage(local, 30_000, 3, true, counter, generation, "Черновой перемещаемый скан");
-                    publishStage(local, 60_000, 1, true, counter, generation, "Перемещаемый скан");
+                    publishStage(local, Math.max(60_000,effectiveBudget()/2), 1, true, counter, generation, "Перемещаемый скан");
                 } else {
                     publishStage(local, 20_000, 4, false, counter, generation, "Быстрый просмотр");
                     publishStage(local, 65_000, 2, false, counter, generation, "Уточнение");
-                    publishStage(local, PREVIEW_LIMIT, 1, false, counter, generation, "Опорный скан");
+                    publishStage(local, effectiveBudget(), 1, false, counter, generation, "Опорный скан");
                 }
             } catch (Exception error) {
                 runOnUiThread(() -> { if (counter.get() == generation)
