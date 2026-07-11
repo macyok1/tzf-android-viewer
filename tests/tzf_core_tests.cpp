@@ -1,4 +1,5 @@
 #include "tzf_core.h"
+#include "tzf_registration.h"
 
 #include <array>
 #include <cassert>
@@ -109,6 +110,44 @@ int main() {
     auto invalid = directory;
     invalid.components[0].blocks[2] = {255, 2};
     assert(!tzf::validateBlockDirectory(invalid, file.size()).empty());
+
+    std::vector<tzf::Point> moving;
+    for (int face = 0; face < 3; ++face) {
+        for (int a = -10; a <= 10; ++a) {
+            for (int b = -10; b <= 10; ++b) {
+                const float u = a * 0.1F, v = b * 0.1F;
+                if (face == 0) moving.push_back({-1.0F, u, v});
+                if (face == 1) moving.push_back({u, 1.0F, v});
+                if (face == 2) moving.push_back({u, v, -1.0F});
+            }
+        }
+    }
+    constexpr double angle = 7.0 * 3.14159265358979323846 / 180.0;
+    const double cosine = std::cos(angle), sine = std::sin(angle);
+    std::vector<tzf::Point> reference;
+    reference.reserve(moving.size());
+    for (const auto point : moving) {
+        reference.push_back({
+            static_cast<float>(cosine * point.x - sine * point.y + 0.15),
+            static_cast<float>(sine * point.x + cosine * point.y - 0.08),
+            point.z + 0.04F});
+    }
+    tzf::RegistrationOptions registrationOptions;
+    registrationOptions.rmsLimit = 0.03;
+    registrationOptions.p95Limit = 0.06;
+    registrationOptions.minimumOverlap = 0.5;
+    const auto registration = tzf::registerConstrained(
+        reference, moving, {0.10, -0.04, 0.02, 4.0}, registrationOptions);
+    assert(registration.accepted);
+    assert(std::abs(registration.transform[0] - 0.15) < 0.02);
+    assert(std::abs(registration.transform[1] + 0.08) < 0.02);
+    assert(std::abs(registration.transform[2] - 0.04) < 0.02);
+    assert(std::abs(registration.transform[3] - 7.0) < 0.5);
+
+    const auto rejected = tzf::registerConstrained(
+        std::vector<tzf::Point>(20), std::vector<tzf::Point>(20), {});
+    assert(!rejected.accepted);
+    assert(rejected.reason == "not enough points");
 
     std::filesystem::remove(path);
     return 0;

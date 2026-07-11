@@ -3,7 +3,7 @@
     <string name="mode_stitching">Сшивка</string><string name="open_scan">Открыть скан</string>
     <string name="open_reference">Опорный скан</string><string name="open_movable">Добавить скан</string>
     <string name="projection">Проекция</string><string name="measure">Измерить</string>
-    <string name="fit_view">Вписать</string><string name="position">Положение</string>
+    <string name="fit_view">Показать всё</string><string name="position">Положение</string>
     <string name="rotation">Вращение</string><string name="display">Отображение</string>
     <string name="reference_visible">Опорный</string><string name="movable_visible">Перемещаемый</string>
     <string name="reset_transform">Сбросить</string><string name="save_transform">Сохранить</string>

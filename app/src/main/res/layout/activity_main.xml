@@ -34,12 +34,13 @@
                 <Button android:id="@+id/openSecondary" style="@style/ToolButton" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="@string/open_movable"/>
             </LinearLayout>
             <TextView android:id="@+id/transformSummary" android:layout_width="match_parent" android:layout_height="wrap_content" android:padding="10dp" android:textColor="@color/amber" android:fontFamily="monospace"/>
-            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/position" android:textColor="@color/text_primary" android:textStyle="bold"/>
-            <EditText android:id="@+id/translationStep" style="@style/AxisInput" android:layout_width="match_parent" android:layout_height="48dp" android:hint="@string/translation_step" android:text="0.100"/>
-            <LinearLayout android:id="@+id/translationFields" android:layout_width="match_parent" android:layout_height="wrap_content"/>
-            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/rotation" android:textColor="@color/text_primary" android:textStyle="bold"/>
-            <EditText android:id="@+id/rotationStep" style="@style/AxisInput" android:layout_width="match_parent" android:layout_height="48dp" android:hint="@string/rotation_step" android:text="1.0"/>
-            <LinearLayout android:id="@+id/rotationFields" android:layout_width="match_parent" android:layout_height="wrap_content"/>
+            <Button android:id="@+id/registerScans" style="@style/ToolButton" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Точная сшивка"/>
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="center_vertical">
+                <EditText android:id="@+id/rmsLimit" style="@style/AxisInput" android:layout_width="0dp" android:layout_height="48dp" android:layout_weight="1" android:hint="RMS, ед." android:text="3.0" android:inputType="numberDecimal"/>
+                <EditText android:id="@+id/p95Limit" style="@style/AxisInput" android:layout_width="0dp" android:layout_height="48dp" android:layout_weight="1" android:hint="P95, ед." android:text="8.0" android:inputType="numberDecimal"/>
+            </LinearLayout>
+            <ProgressBar android:id="@+id/registrationProgress" style="?android:attr/progressBarStyleHorizontal" android:layout_width="match_parent" android:layout_height="8dp" android:indeterminate="true" android:visibility="gone"/>
+            <Button android:id="@+id/cancelRegistration" style="@style/ToolButton" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Отменить сшивку" android:visibility="gone"/>
             <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="center_vertical">
                 <CheckBox android:id="@+id/showPrimary" android:layout_width="0dp" android:layout_height="48dp" android:layout_weight="1" android:text="@string/reference_visible" android:textColor="@color/cyan" android:checked="true"/>
                 <CheckBox android:id="@+id/showSecondary" android:layout_width="0dp" android:layout_height="48dp" android:layout_weight="1" android:text="@string/movable_visible" android:textColor="@color/amber" android:checked="true"/>
