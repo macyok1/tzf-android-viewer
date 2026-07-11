@@ -174,3 +174,35 @@ Java_ru_tzfviewer_TzfNative_registerScans(JNIEnv* env, jclass,
         return nullptr;
     }
 }
+
+extern "C" JNIEXPORT jobject JNICALL
+Java_ru_tzfviewer_TzfNative_registerPointClouds(JNIEnv* env, jclass,
+                                                 jfloatArray referenceXyz,
+                                                 jfloatArray movingXyz,
+                                                 jfloatArray initialTransform,
+                                                 jdouble rmsLimit,
+                                                 jdouble p95Limit) {
+    if (referenceXyz == nullptr || movingXyz == nullptr || initialTransform == nullptr ||
+        env->GetArrayLength(initialTransform) != 4 ||
+        env->GetArrayLength(referenceXyz) % 3 != 0 || env->GetArrayLength(movingXyz) % 3 != 0) {
+        throwIOException(env, "invalid registration point arrays"); return nullptr;
+    }
+    try {
+        std::vector<float> reference(static_cast<std::size_t>(env->GetArrayLength(referenceXyz)));
+        std::vector<float> moving(static_cast<std::size_t>(env->GetArrayLength(movingXyz)));
+        env->GetFloatArrayRegion(referenceXyz, 0, static_cast<jsize>(reference.size()), reference.data());
+        env->GetFloatArrayRegion(movingXyz, 0, static_cast<jsize>(moving.size()), moving.data());
+        std::array<float,4> initialFloats{};
+        env->GetFloatArrayRegion(initialTransform,0,4,initialFloats.data());
+        if (env->ExceptionCheck()) return nullptr;
+        std::array<double,4> initial{}; std::copy(initialFloats.begin(),initialFloats.end(),initial.begin());
+        tzf::RegistrationOptions options; options.rmsLimit=rmsLimit; options.p95Limit=p95Limit;
+        const auto result=tzf::registerConstrained(tzf::xyzToPoints(reference),tzf::xyzToPoints(moving),initial,options);
+        const auto resultClass=env->FindClass("ru/tzfviewer/RegistrationResult"); if(resultClass==nullptr)return nullptr;
+        const auto constructor=env->GetMethodID(resultClass,"<init>","(ZDDDILjava/lang/String;[F)V"); if(constructor==nullptr)return nullptr;
+        std::array<float,4> transform{};std::transform(result.transform.begin(),result.transform.end(),transform.begin(),[](double v){return static_cast<float>(v);});
+        const auto transformArray=env->NewFloatArray(4);if(transformArray==nullptr)return nullptr;env->SetFloatArrayRegion(transformArray,0,4,transform.data());
+        const auto reason=env->NewStringUTF(result.reason.c_str());
+        return env->NewObject(resultClass,constructor,static_cast<jboolean>(result.accepted),result.rms,result.p95,result.overlap,static_cast<jint>(result.iterations),reason,transformArray);
+    } catch(const std::exception& error){throwIOException(env,error.what());return nullptr;}
+}

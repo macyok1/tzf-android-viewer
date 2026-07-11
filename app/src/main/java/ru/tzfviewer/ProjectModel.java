@@ -6,7 +6,7 @@ import java.util.List;
 import java.util.UUID;
 
 final class ProjectModel {
-    static final int FORMAT_VERSION = 1;
+    static final int FORMAT_VERSION = 2;
     final String id;
     String name;
     long createdAt;
@@ -15,6 +15,7 @@ final class ProjectModel {
     int pointSize = 2;
     float cameraYaw = 25f, cameraPitch = -18f, cameraZoom = 1f;
     boolean orthographic, gridVisible = true;
+    String referenceNodeId = "", movingNodeId = "";
     final Group root;
 
     ProjectModel(String id, String name, long now) {
@@ -28,11 +29,19 @@ final class ProjectModel {
 
     int scanCount() { return root.scanCount(); }
     void touch(long now) { modifiedAt = Math.max(modifiedAt, now); }
+    Node findNode(String id) { return id == null || id.isEmpty() ? null : findNode(root,id); }
+    private static Node findNode(Group group,String id){for(Node child:group.children){if(child.id.equals(id))return child;if(child instanceof Group){Node found=findNode((Group)child,id);if(found!=null)return found;}}return null;}
+    boolean canRegister(){Node r=findNode(referenceNodeId),m=findNode(movingNodeId);return r!=null&&m!=null&&r!=m&&!isAncestor(r,m)&&!isAncestor(m,r);}
+    void setReference(Node node){Node moving=findNode(movingNodeId);if(node!=null&&(node==moving||isAncestor(node,moving)||isAncestor(moving,node)))movingNodeId="";referenceNodeId=node==null?"":node.id;}
+    void setMoving(Node node){Node reference=findNode(referenceNodeId);if(node!=null&&(node==reference||isAncestor(node,reference)||isAncestor(reference,node)))referenceNodeId="";movingNodeId=node==null?"":node.id;}
+    void clearRoleFor(Node node){if(node==null)return;if(node.id.equals(referenceNodeId)||isAncestor(node,findNode(referenceNodeId)))referenceNodeId="";if(node.id.equals(movingNodeId)||isAncestor(node,findNode(movingNodeId)))movingNodeId="";}
+    static boolean isAncestor(Node ancestor,Node node){if(ancestor==null||node==null)return false;for(Group p=node.parent();p!=null;p=p.parent())if(p==ancestor)return true;return false;}
 
     abstract static class Node {
         final String id;
         String name;
         boolean visible = true;
+        boolean expanded = true;
         final float[] transform = new float[4];
         private Group parent;
         Node(String id, String name) { this.id=id; this.name=name; }
@@ -46,9 +55,12 @@ final class ProjectModel {
     }
 
     static final class Scan extends Node {
+        static final int WAITING=0,LOADING=1,READY=2,ERROR=3;
         String uri = "";
         int color = 0xff38c9e8;
         long sourcePointCount;
+        transient int loadState=WAITING;
+        transient String loadError="";
         Scan(String id, String name) { super(id,name); }
         @Override boolean isGroup(){return false;}
         @Override int scanCount(){return 1;}

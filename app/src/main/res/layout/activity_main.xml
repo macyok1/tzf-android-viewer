@@ -1,65 +1,82 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="match_parent" android:layout_height="match_parent"
-    android:orientation="vertical" android:background="@color/ink">
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent" android:layout_height="match_parent" android:background="@color/ink">
 
-    <LinearLayout android:layout_width="match_parent" android:layout_height="56dp"
-        android:gravity="center_vertical" android:paddingHorizontal="12dp" android:background="@color/panel">
-        <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
-            android:text="@string/app_name" android:textColor="@color/text_primary" android:textSize="20sp" android:textStyle="bold"/>
-        <Button android:id="@+id/modeViewer" style="@style/ToolButton" android:layout_width="wrap_content" android:layout_height="match_parent" android:text="@string/mode_viewer"/>
-        <Button android:id="@+id/modeStitching" style="@style/ToolButton" android:layout_width="wrap_content" android:layout_height="match_parent" android:text="@string/mode_stitching"/>
+    <FrameLayout android:id="@+id/viewportContainer" android:layout_width="match_parent" android:layout_height="match_parent" />
+
+    <LinearLayout android:layout_width="match_parent" android:layout_height="48dp" android:gravity="center_vertical"
+        android:paddingHorizontal="12dp" android:background="@color/panel" android:elevation="8dp">
+        <TextView android:id="@+id/projectTitle" android:layout_width="0dp" android:layout_height="match_parent"
+            android:layout_weight="1" android:gravity="center_vertical" android:textColor="@color/text_primary"
+            android:textSize="18sp" android:textStyle="bold" />
+        <TextView android:layout_width="wrap_content" android:layout_height="32dp" android:gravity="center"
+            android:paddingHorizontal="10dp" android:text="СШИВКА" android:textColor="@color/cyan"
+            android:background="@color/ink" />
     </LinearLayout>
 
-    <FrameLayout android:id="@+id/viewportContainer" android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1">
-        <ru.tzfviewer.OrientationCubeView android:id="@+id/orientation" android:layout_width="112dp" android:layout_height="112dp" android:layout_gravity="top|end" android:layout_marginEnd="12dp" android:layout_marginTop="58dp"/>
-        <LinearLayout android:id="@+id/compactTools" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_gravity="top|start" android:layout_margin="8dp" android:orientation="horizontal">
-            <Button android:id="@+id/compactOpen" style="@style/CompactTool" android:layout_width="42dp" android:layout_height="42dp" android:text="＋" android:contentDescription="Открыть скан"/>
-            <Button android:id="@+id/compactFit" style="@style/CompactTool" android:layout_width="42dp" android:layout_height="42dp" android:text="⌂" android:contentDescription="Показать всё"/>
-            <Button android:id="@+id/compactProjection" style="@style/CompactTool" android:layout_width="42dp" android:layout_height="42dp" android:text="◇" android:contentDescription="Проекция"/>
-            <Button android:id="@+id/pointSize" style="@style/CompactTool" android:layout_width="45dp" android:layout_height="42dp" android:text="•• 2" android:textSize="11sp" android:contentDescription="Толщина точек"/>
-            <Button android:id="@+id/pointBudget" style="@style/CompactTool" android:layout_width="52dp" android:layout_height="42dp" android:text="150k" android:textSize="10sp" android:contentDescription="Количество точек"/>
-            <Button android:id="@+id/grid" style="@style/CompactTool" android:layout_width="42dp" android:layout_height="42dp" android:text="▦" android:contentDescription="Сетка"/>
-            <Button android:id="@+id/scans" style="@style/CompactTool" android:layout_width="42dp" android:layout_height="42dp" android:text="☰" android:contentDescription="Список сканов"/>
-        </LinearLayout>
-        <TextView android:id="@+id/status" android:layout_width="wrap_content" android:layout_height="wrap_content"
-            android:layout_gravity="bottom|start" android:layout_margin="12dp" android:maxWidth="320dp"
-            android:padding="10dp" android:background="@color/panel" android:text="@string/empty_status"
-            android:textColor="@color/text_secondary"/>
-        <LinearLayout android:id="@+id/scanPanel" android:layout_width="match_parent" android:layout_height="260dp" android:layout_gravity="bottom" android:orientation="vertical" android:background="@color/panel" android:visibility="gone" android:elevation="12dp"><LinearLayout android:layout_width="match_parent" android:layout_height="48dp" android:gravity="center_vertical" android:paddingHorizontal="12dp"><TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="center_vertical" android:text="СКАНЫ И СВЯЗКИ" android:textColor="@color/text_primary" android:textStyle="bold"/><Button android:id="@+id/closeScans" style="@style/CompactTool" android:layout_width="44dp" android:layout_height="44dp" android:text="⌄"/></LinearLayout><ScrollView android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1"><ru.tzfviewer.ScanTreePanel android:id="@+id/scanTree" android:layout_width="match_parent" android:layout_height="wrap_content"/></ScrollView></LinearLayout>
-    </FrameLayout>
-
-    <LinearLayout android:id="@+id/viewerTools" android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:gravity="center" android:background="@color/panel" android:padding="4dp">
-        <Button android:id="@+id/openPrimary" style="@style/ToolButton" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="@string/open_scan"/>
-        <Button android:id="@+id/projection" style="@style/ToolButton" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="@string/projection"/>
-        <Button android:id="@+id/measure" style="@style/ToolButton" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="@string/measure"/>
-        <Button android:id="@+id/fit" style="@style/ToolButton" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="@string/fit_view"/>
+    <LinearLayout android:id="@+id/compactTools" android:layout_width="44dp" android:layout_height="wrap_content"
+        android:layout_gravity="top|start" android:layout_marginStart="8dp" android:layout_marginTop="56dp"
+        android:orientation="vertical" android:background="@color/panel" android:elevation="7dp">
+        <Button android:id="@+id/compactOpen" style="@style/CompactTool" android:layout_width="44dp" android:layout_height="44dp" android:text="＋" android:contentDescription="Добавить TZF"/>
+        <Button android:id="@+id/compactFit" style="@style/CompactTool" android:layout_width="44dp" android:layout_height="44dp" android:text="⌂" android:contentDescription="Показать всё"/>
+        <Button android:id="@+id/scans" style="@style/CompactTool" android:layout_width="44dp" android:layout_height="44dp" android:text="R/M" android:textSize="10sp" android:contentDescription="Сканы и связки"/>
+        <Button android:id="@+id/measure" style="@style/CompactTool" android:layout_width="44dp" android:layout_height="44dp" android:text="◎" android:contentDescription="Измерение"/>
+        <Button android:id="@+id/moreTools" style="@style/CompactTool" android:layout_width="44dp" android:layout_height="44dp" android:text="⋯" android:contentDescription="Параметры"/>
     </LinearLayout>
 
-    <ScrollView android:id="@+id/stitchingTools" android:layout_width="match_parent" android:layout_height="280dp" android:visibility="gone" android:background="@color/panel">
-        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:padding="8dp">
-            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content">
-                <Button android:id="@+id/openReference" style="@style/ToolButton" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="@string/open_reference"/>
-                <Button android:id="@+id/openSecondary" style="@style/ToolButton" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="@string/open_movable"/>
-            </LinearLayout>
-            <TextView android:id="@+id/transformSummary" android:layout_width="match_parent" android:layout_height="wrap_content" android:padding="10dp" android:textColor="@color/amber" android:fontFamily="monospace"/>
-            <Button android:id="@+id/registerScans" style="@style/ToolButton" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Точная сшивка"/>
-            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="center_vertical">
-                <EditText android:id="@+id/rmsLimit" style="@style/AxisInput" android:layout_width="0dp" android:layout_height="48dp" android:layout_weight="1" android:hint="RMS, ед." android:text="3.0" android:inputType="numberDecimal"/>
-                <EditText android:id="@+id/p95Limit" style="@style/AxisInput" android:layout_width="0dp" android:layout_height="48dp" android:layout_weight="1" android:hint="P95, ед." android:text="8.0" android:inputType="numberDecimal"/>
-            </LinearLayout>
-            <ProgressBar android:id="@+id/registrationProgress" style="?android:attr/progressBarStyleHorizontal" android:layout_width="match_parent" android:layout_height="8dp" android:indeterminate="true" android:visibility="gone"/>
-            <Button android:id="@+id/cancelRegistration" style="@style/ToolButton" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Отменить сшивку" android:visibility="gone"/>
-            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="center_vertical">
-                <CheckBox android:id="@+id/showPrimary" android:layout_width="0dp" android:layout_height="48dp" android:layout_weight="1" android:text="@string/reference_visible" android:textColor="@color/cyan" android:checked="true"/>
-                <CheckBox android:id="@+id/showSecondary" android:layout_width="0dp" android:layout_height="48dp" android:layout_weight="1" android:text="@string/movable_visible" android:textColor="@color/amber" android:checked="true"/>
-            </LinearLayout>
-            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content">
-                <Button android:id="@+id/resetTransform" style="@style/ToolButton" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="@string/reset_transform"/>
-                <Button android:id="@+id/saveTransform" style="@style/ToolButton" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="@string/save_transform"/>
-                <Button android:id="@+id/restoreTransform" style="@style/ToolButton" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="@string/restore_transform"/>
-            </LinearLayout>
+    <ru.tzfviewer.OrientationCubeView android:id="@+id/orientation" android:layout_width="96dp" android:layout_height="96dp"
+        android:layout_gravity="top|end" android:layout_marginTop="58dp" android:layout_marginEnd="10dp" />
+
+    <TextView android:id="@+id/status" android:layout_width="wrap_content" android:layout_height="wrap_content"
+        android:layout_gravity="bottom|start" android:layout_marginStart="60dp" android:layout_marginBottom="10dp"
+        android:maxWidth="280dp" android:padding="7dp" android:background="@color/panel"
+        android:text="Добавьте TZF кнопкой ＋" android:textColor="@color/text_secondary" />
+
+    <LinearLayout android:id="@+id/pairCard" android:layout_width="210dp" android:layout_height="wrap_content"
+        android:layout_gravity="bottom|end" android:layout_margin="10dp" android:orientation="vertical"
+        android:padding="7dp" android:background="@color/panel" android:elevation="8dp">
+        <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="ВЫБРАНО ДЛЯ СШИВКИ" android:textSize="10sp" android:textColor="@color/text_secondary" />
+        <TextView android:id="@+id/referenceLabel" android:layout_width="match_parent" android:layout_height="34dp" android:gravity="center_vertical" android:text="R  не выбран" android:textColor="@color/cyan" />
+        <TextView android:id="@+id/movingLabel" android:layout_width="match_parent" android:layout_height="34dp" android:gravity="center_vertical" android:text="M  не выбран" android:textColor="@color/amber" />
+        <Button android:id="@+id/registerScans" style="@style/ToolButton" android:layout_width="match_parent" android:layout_height="42dp" android:text="Точная сшивка" />
+        <ProgressBar android:id="@+id/registrationProgress" style="?android:attr/progressBarStyleHorizontal" android:layout_width="match_parent" android:layout_height="5dp" android:indeterminate="true" android:visibility="gone" />
+        <Button android:id="@+id/cancelRegistration" style="@style/ToolButton" android:layout_width="match_parent" android:layout_height="40dp" android:text="Отмена" android:visibility="gone" />
+    </LinearLayout>
+
+    <LinearLayout android:id="@+id/scanPanel" android:layout_width="match_parent" android:layout_height="220dp"
+        android:layout_gravity="bottom" android:orientation="vertical" android:background="@color/panel"
+        android:visibility="gone" android:elevation="12dp">
+        <LinearLayout android:layout_width="match_parent" android:layout_height="36dp" android:gravity="center_vertical" android:paddingHorizontal="10dp">
+            <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="center_vertical" android:text="СКАНЫ И СВЯЗКИ" android:textColor="@color/text_primary" android:textStyle="bold" />
+            <Button android:id="@+id/closeScans" style="@style/CompactTool" android:layout_width="36dp" android:layout_height="36dp" android:text="⌄" />
         </LinearLayout>
-    </ScrollView>
-</LinearLayout>
+        <ScrollView android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1">
+            <ru.tzfviewer.ScanTreePanel android:id="@+id/scanTree" android:layout_width="match_parent" android:layout_height="wrap_content" />
+        </ScrollView>
+    </LinearLayout>
+
+    <LinearLayout android:id="@+id/settingsPanel" android:layout_width="match_parent" android:layout_height="220dp"
+        android:layout_gravity="bottom" android:orientation="vertical" android:padding="8dp"
+        android:background="@color/panel" android:visibility="gone" android:elevation="12dp">
+        <LinearLayout android:layout_width="match_parent" android:layout_height="36dp" android:gravity="center_vertical">
+            <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="center_vertical" android:text="ПАРАМЕТРЫ СШИВКИ" android:textColor="@color/text_primary" android:textStyle="bold" />
+            <Button android:id="@+id/closeSettings" style="@style/CompactTool" android:layout_width="36dp" android:layout_height="36dp" android:text="⌄" />
+        </LinearLayout>
+        <TextView android:id="@+id/transformSummary" android:layout_width="match_parent" android:layout_height="32dp" android:gravity="center_vertical" android:textColor="@color/amber" android:fontFamily="monospace" />
+        <LinearLayout android:layout_width="match_parent" android:layout_height="44dp">
+            <EditText android:id="@+id/rmsLimit" style="@style/AxisInput" android:layout_width="0dp" android:layout_height="44dp" android:layout_weight="1" android:hint="RMS, ед." android:text="3.0" />
+            <EditText android:id="@+id/p95Limit" style="@style/AxisInput" android:layout_width="0dp" android:layout_height="44dp" android:layout_weight="1" android:hint="P95, ед." android:text="8.0" />
+        </LinearLayout>
+        <LinearLayout android:layout_width="match_parent" android:layout_height="44dp">
+            <Button android:id="@+id/resetTransform" style="@style/ToolButton" android:layout_width="0dp" android:layout_height="44dp" android:layout_weight="1" android:text="Сброс" />
+            <Button android:id="@+id/saveTransform" style="@style/ToolButton" android:layout_width="0dp" android:layout_height="44dp" android:layout_weight="1" android:text="Сохранить" />
+            <Button android:id="@+id/restoreTransform" style="@style/ToolButton" android:layout_width="0dp" android:layout_height="44dp" android:layout_weight="1" android:text="Вернуть" />
+        </LinearLayout>
+        <LinearLayout android:layout_width="match_parent" android:layout_height="44dp">
+            <Button android:id="@+id/compactProjection" style="@style/ToolButton" android:layout_width="0dp" android:layout_height="44dp" android:layout_weight="1" android:text="Проекция" />
+            <Button android:id="@+id/grid" style="@style/ToolButton" android:layout_width="0dp" android:layout_height="44dp" android:layout_weight="1" android:text="Сетка" />
+            <Button android:id="@+id/pointSize" style="@style/ToolButton" android:layout_width="0dp" android:layout_height="44dp" android:layout_weight="1" android:text="•• 2" />
+            <Button android:id="@+id/pointBudget" style="@style/ToolButton" android:layout_width="0dp" android:layout_height="44dp" android:layout_weight="1" android:text="150k" />
+        </LinearLayout>
+    </LinearLayout>
+</FrameLayout>

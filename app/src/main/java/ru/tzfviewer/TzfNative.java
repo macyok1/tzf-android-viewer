@@ -17,4 +17,7 @@ final class TzfNative {
     static native RegistrationResult registerScans(String referencePath, String movingPath,
             float[] initialTransform, double rmsLimit, double p95Limit)
             throws java.io.IOException;
+    static native RegistrationResult registerPointClouds(float[] referenceXyz, float[] movingXyz,
+            float[] initialTransform, double rmsLimit, double p95Limit)
+            throws java.io.IOException;
 }
