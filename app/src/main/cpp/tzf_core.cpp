@@ -495,6 +495,93 @@ std::vector<SphericalPoint> decodeSphericalLine(
                                scanInfo.height, lineIndex);
 }
 
+PointCloudPreview decodePointCloudPreview(
+    BinaryFile& file, const FileHeader& fileHeader,
+    const ScanInfo& scanInfo, const BlockDirectory& directory,
+    std::uint32_t maxPoints) {
+    (void)fileHeader;
+    constexpr std::uint32_t tileSize = 512;
+    if (scanInfo.tileSize != tileSize || maxPoints == 0) {
+        throw std::runtime_error("unsupported TZF preview request");
+    }
+
+    const auto tileColumns = (scanInfo.width + tileSize - 1U) / tileSize;
+    const auto tileRows = (scanInfo.height + tileSize - 1U) / tileSize;
+    const auto tileCount = static_cast<std::uint64_t>(tileColumns) * tileRows;
+    const auto& rhoComponent = requireComponent(directory, 1);
+    const auto& polarComponent = requireComponent(directory, 2);
+    const auto& azimuthComponent = requireComponent(directory, 3);
+    if (rhoComponent.blocks.size() != tileCount ||
+        polarComponent.blocks.size() != tileCount ||
+        azimuthComponent.blocks.size() != tileCount) {
+        throw std::runtime_error("TZF component tile count does not match scan");
+    }
+
+    const auto gridPointCount = static_cast<std::uint64_t>(scanInfo.width) *
+                                scanInfo.height;
+    const auto stride = std::max<std::uint32_t>(
+        1U, static_cast<std::uint32_t>(std::ceil(std::sqrt(
+                static_cast<double>(gridPointCount) / maxPoints))));
+    PointCloudPreview preview;
+    preview.sourcePointCount = scanInfo.validPointCount;
+    preview.xyz.reserve(static_cast<std::size_t>(maxPoints) * 3U);
+
+    for (std::uint32_t tileX = 0; tileX < tileColumns; ++tileX) {
+        for (std::uint32_t tileY = 0; tileY < tileRows; ++tileY) {
+            const auto tileIndex =
+                static_cast<std::size_t>(tileX) * tileRows + tileY;
+            const std::array<const BlockDescriptor*, 3> blocks{
+                &rhoComponent.blocks[tileIndex],
+                &polarComponent.blocks[tileIndex],
+                &azimuthComponent.blocks[tileIndex]};
+            std::array<TileHeader, 3> headers;
+            std::array<std::vector<std::uint8_t>, 3> channels;
+            for (std::size_t channel = 0; channel < channels.size(); ++channel) {
+                headers[channel] = parseTileHeader(file, *blocks[channel]);
+                channels[channel] =
+                    decodeTilePayload(file, *blocks[channel], headers[channel]);
+                if (headers[channel].width != tileSize ||
+                    headers[channel].height != tileSize ||
+                    headers[channel].scale == 0.0F) {
+                    throw std::runtime_error("unsupported TZF tile geometry or scale");
+                }
+            }
+
+            const auto firstX = tileX * tileSize;
+            const auto firstY = tileY * tileSize;
+            const auto xCount = std::min(tileSize, scanInfo.width - firstX);
+            const auto yCount = std::min(tileSize, scanInfo.height - firstY);
+            for (std::uint32_t localX = 0; localX < xCount; ++localX) {
+                const auto x = firstX + localX;
+                if (x % stride != 0) continue;
+                for (std::uint32_t localY = 0; localY < yCount; ++localY) {
+                    const auto y = firstY + localY;
+                    if (y % stride != 0) continue;
+                    const auto valueIndex =
+                        static_cast<std::size_t>(localX) * tileSize + localY;
+                    const auto rho = readU32(channels[0].data() + valueIndex * 4U);
+                    if (rho == 0) continue;
+                    const SphericalPoint spherical{
+                        static_cast<float>(rho) / headers[0].scale,
+                        static_cast<float>(readI32(channels[2].data() +
+                                                   valueIndex * 4U)) /
+                            headers[2].scale,
+                        static_cast<float>(readI32(channels[1].data() +
+                                                   valueIndex * 4U)) /
+                            headers[1].scale};
+                    const auto point = sphericalToXyz(spherical);
+                    if (!std::isfinite(point.x) || !std::isfinite(point.y) ||
+                        !std::isfinite(point.z)) continue;
+                    preview.xyz.insert(preview.xyz.end(),
+                                       {point.x, point.y, point.z});
+                    if (preview.xyz.size() / 3U >= maxPoints) return preview;
+                }
+            }
+        }
+    }
+    return preview;
+}
+
 Point sphericalToXyz(const SphericalPoint& point) {
     const auto sinPolar = std::sin(point.polar);
     return {

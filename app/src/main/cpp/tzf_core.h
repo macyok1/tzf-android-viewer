@@ -38,6 +38,11 @@ struct Point {
     float z{};
 };
 
+struct PointCloudPreview {
+    std::vector<float> xyz;
+    std::uint64_t sourcePointCount{};
+};
+
 struct FileHeader {
     std::uint32_t headerSize{};
     std::uint64_t scanInfoOffset{};
@@ -113,6 +118,10 @@ private:
     BinaryFile& file, const FileHeader& fileHeader,
     const ScanInfo& scanInfo, const BlockDirectory& directory,
     std::uint32_t lineIndex);
+[[nodiscard]] PointCloudPreview decodePointCloudPreview(
+    BinaryFile& file, const FileHeader& fileHeader,
+    const ScanInfo& scanInfo, const BlockDirectory& directory,
+    std::uint32_t maxPoints);
 [[nodiscard]] Point sphericalToXyz(const SphericalPoint& point);
 [[nodiscard]] std::string validateBlockDirectory(
     const BlockDirectory& directory, std::uint64_t fileSize);
