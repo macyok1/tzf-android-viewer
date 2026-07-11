@@ -1,0 +1,9 @@
+package ru.tzfviewer;
+import android.content.Context;import android.graphics.Color;import android.view.Gravity;import android.widget.*;
+final class ScanTreePanel extends LinearLayout{
+ interface Listener{void changed();void visibility(ProjectModel.Node n,boolean v);}private ProjectModel p;private Listener l;
+ ScanTreePanel(Context c){super(c);setOrientation(VERTICAL);}void bind(ProjectModel p,Listener l){this.p=p;this.l=l;refresh();}
+ void refresh(){removeAllViews();if(p==null)return;for(ProjectModel.Node n:p.root.children())addNode(n,0);if(getChildCount()==0){TextView t=text("Сканы ещё не добавлены");t.setPadding(dp(14),dp(24),0,dp(24));addView(t);}}
+ private void addNode(ProjectModel.Node n,int d){LinearLayout r=new LinearLayout(getContext());r.setGravity(Gravity.CENTER_VERTICAL);r.setPadding(dp(8+d*16),2,4,2);CheckBox v=new CheckBox(getContext());v.setChecked(n.visible);v.setOnCheckedChangeListener((b,x)->{n.visible=x;if(l!=null){l.visibility(n,x);l.changed();}});r.addView(v,new LayoutParams(dp(44),dp(44)));TextView t=text((n.isGroup()?"▼  ":"●  ")+n.name);r.addView(t,new LayoutParams(0,dp(44),1));Button a=new Button(getContext());a.setText(n.isGroup()?"⇱":"×");a.setTextColor(Color.WHITE);a.setBackgroundColor(Color.TRANSPARENT);a.setOnClickListener(x->{if(n instanceof ProjectModel.Group)((ProjectModel.Group)n).dissolveIntoParent();else if(n.parent()!=null)n.parent().remove(n);if(l!=null)l.changed();refresh();});r.addView(a,new LayoutParams(dp(48),dp(44)));addView(r);if(n instanceof ProjectModel.Group)for(ProjectModel.Node c:((ProjectModel.Group)n).children())addNode(c,d+1);}
+ private TextView text(String s){TextView t=new TextView(getContext());t.setText(s);t.setTextColor(Color.WHITE);t.setGravity(Gravity.CENTER_VERTICAL);return t;}private int dp(int x){return Math.round(x*getResources().getDisplayMetrics().density);}
+}

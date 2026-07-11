@@ -94,7 +94,7 @@ public final class MainActivity extends Activity {
         pointSizeButton.setOnClickListener(v->{pointSizeIndex=(pointSizeIndex+1)%pointSizes.length;project.pointSize=pointSizes[pointSizeIndex];cloud.setPointSize(project.pointSize);pointSizeButton.setText("•• "+project.pointSize);});
         budgetButton.setOnClickListener(v->{budgetIndex=(budgetIndex+1)%POINT_BUDGETS.length;project.pointBudget=POINT_BUDGETS[budgetIndex];budgetButton.setText(budgetLabel(project.pointBudget));reloadForBudget();});
         gridButton.setSelected(project.gridVisible);gridButton.setOnClickListener(v->{project.gridVisible=!project.gridVisible;gridButton.setSelected(project.gridVisible);cloud.setGridVisible(project.gridVisible);});
-        findViewById(R.id.scans).setOnClickListener(v->status.setText("Панель сканов — следующий этап"));
+        ScanTreePanel tree=findViewById(R.id.scanTree);tree.bind(project,new ScanTreePanel.Listener(){public void changed(){project.touch(System.currentTimeMillis());tree.refresh();}public void visibility(ProjectModel.Node n,boolean v){int i=project.root.children().indexOf(n);if(i==0)cloud.setPrimaryVisible(v);else if(i==1)cloud.setSecondaryVisible(v);}});View panel=findViewById(R.id.scanPanel);findViewById(R.id.scans).setOnClickListener(v->panel.setVisibility(panel.getVisibility()==View.VISIBLE?View.GONE:View.VISIBLE));findViewById(R.id.closeScans).setOnClickListener(v->panel.setVisibility(View.GONE));
         cloud.setPointSize(project.pointSize);cloud.setGridVisible(project.gridVisible);pointSizeButton.setText("•• "+project.pointSize);budgetButton.setText(budgetLabel(project.pointBudget));
         registerButton.setOnClickListener(v -> startRegistration());
         cancelRegistration.setOnClickListener(v -> cancelRegistration());
@@ -255,7 +255,7 @@ public final class MainActivity extends Activity {
         decode(uri, request == PICK_SECONDARY);
     }
 
-    private void rememberScan(Uri uri){for(ProjectModel.Node node:project.root.children())if(node instanceof ProjectModel.Scan&&uri.toString().equals(((ProjectModel.Scan)node).uri))return;String name=uri.getLastPathSegment();if(name==null||name.isEmpty())name="Scan "+(project.scanCount()+1);int slash=Math.max(name.lastIndexOf('/'),name.lastIndexOf(':'));if(slash>=0&&slash+1<name.length())name=name.substring(slash+1);ProjectModel.Scan scan=new ProjectModel.Scan(UUID.randomUUID().toString(),name);scan.uri=uri.toString();scan.color=project.scanCount()%2==0?0xff38c9e8:0xffffb44a;project.root.add(scan);project.touch(System.currentTimeMillis());}
+    private void rememberScan(Uri uri){for(ProjectModel.Node node:project.root.children())if(node instanceof ProjectModel.Scan&&uri.toString().equals(((ProjectModel.Scan)node).uri))return;String name=uri.getLastPathSegment();if(name==null||name.isEmpty())name="Scan "+(project.scanCount()+1);int slash=Math.max(name.lastIndexOf('/'),name.lastIndexOf(':'));if(slash>=0&&slash+1<name.length())name=name.substring(slash+1);ProjectModel.Scan scan=new ProjectModel.Scan(UUID.randomUUID().toString(),name);scan.uri=uri.toString();scan.color=project.scanCount()%2==0?0xff38c9e8:0xffffb44a;project.root.add(scan);project.touch(System.currentTimeMillis());ScanTreePanel tree=findViewById(R.id.scanTree);if(tree!=null)tree.refresh();}
 
     private void decode(Uri uri, boolean secondary) {
         AtomicInteger counter = secondary ? secondaryGeneration : primaryGeneration;
