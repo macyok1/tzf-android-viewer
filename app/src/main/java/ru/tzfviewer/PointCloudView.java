@@ -57,7 +57,7 @@ public final class PointCloudView extends GLSurfaceView {
         private final float[] local=new float[16],secondaryModel=new float[16],secondaryMv=new float[16],secondaryMvp=new float[16],gridMvp=new float[16];
         private final float[] transform=new float[4],projectIn=new float[4],projectOut=new float[4];
         private final float[] measure=new float[6];private int measureCount;
-        private final FloatBuffer measureBuffer=direct(6),gizmoBuffer=direct(256);
+        private final FloatBuffer measureBuffer=direct(6),gizmoBuffer=direct(512);
         private FloatBuffer points,secondaryPoints,gridBuffer;private float[] cloud;
         private int pointCount,secondaryCount,gridCount,width,height,program,position,matrix,color,size;
         private float cx,cy,cz,span=1f,secondaryCx,secondaryCy,secondaryCz;
