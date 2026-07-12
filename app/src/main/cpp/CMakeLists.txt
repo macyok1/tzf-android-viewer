@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22.1)
 project(tzfreader)
-add_library(tzfreader SHARED tzf_reader.cpp tzf_core.cpp tzf_registration.cpp)
+add_library(tzfreader SHARED tzf_reader.cpp tzf_core.cpp tzf_geometry.cpp tzf_pose_graph.cpp tzf_registration.cpp)
 find_library(log-lib log)
 target_link_libraries(tzfreader ${log-lib})
 

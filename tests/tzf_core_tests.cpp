@@ -1,5 +1,7 @@
 #include "tzf_core.h"
 #include "tzf_registration.h"
+#include "tzf_geometry.h"
+#include "tzf_pose_graph.h"
 
 #include <array>
 #include <cassert>
@@ -191,6 +193,26 @@ int main() {
         std::vector<tzf::Point>(20), std::vector<tzf::Point>(20), {});
     assert(!rejected.accepted);
     assert(rejected.reason == "not enough points");
+
+    const auto centroids = tzf::voxelCentroids(moving, 0.2);
+    auto reverse = moving; std::reverse(reverse.begin(), reverse.end());
+    const auto reverseCentroids = tzf::voxelCentroids(reverse, 0.2);
+    assert(centroids.size() == reverseCentroids.size());
+    for (std::size_t i=0;i<centroids.size();++i) {
+        assert(std::abs(centroids[i].x-reverseCentroids[i].x)<1e-6F);
+        assert(std::abs(centroids[i].y-reverseCentroids[i].y)<1e-6F);
+        assert(std::abs(centroids[i].z-reverseCentroids[i].z)<1e-6F);
+    }
+    tzf::PlaneExtractionOptions planeOptions; planeOptions.voxelSize=.1; planeOptions.normalRadius=.35; planeOptions.minimumSupport=30;
+    const auto planes=tzf::extractPlanes(moving,planeOptions);
+    assert(planes.size()>=3); bool px=false,py=false,pz=false;
+    for(const auto& plane:planes){px|=std::abs(plane.normal[0])>.9;py|=std::abs(plane.normal[1])>.9;pz|=std::abs(plane.normal[2])>.9;}
+    assert(px&&py&&pz);
+
+    std::vector<std::array<double,4>> graphInitial{{0,0,0,0},{.8,.1,0,1},{1.9,-.1,0,-1}};
+    std::vector<tzf::PoseGraphEdge> graphEdges{{0,1,{1,0,0,0},1},{1,2,{1,0,0,0},1},{0,2,{2,0,0,0},1}};
+    const auto graph=tzf::optimizePoseGraph(3,0,graphInitial,graphEdges);
+    assert(graph.accepted); assert(std::abs(graph.poses[1][0]-1)<.01); assert(std::abs(graph.poses[2][0]-2)<.01);
 
     std::filesystem::remove(path);
     return 0;

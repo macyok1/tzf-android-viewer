@@ -1,4 +1,5 @@
 #include "tzf_registration.h"
+#include "tzf_geometry.h"
 
 #include <algorithm>
 #include <array>
@@ -71,7 +72,7 @@ bool solve4(double a[4][4],double b[4],double x[4]){
 }
 
 struct Metrics{double rms{},p95{},overlap{};std::vector<double> distances;};
-Metrics metrics(const std::vector<Vec3>& reference,const std::vector<Vec3>& moving,Vec3 pivot,const std::array<double,4>& t,double maxDistance){Index index(reference,maxDistance);Metrics m;double sum=0;for(auto p:moving){auto q=transformPoint(p,pivot,t);std::size_t nearest{};double d2{};if(index.nearest(q,maxDistance,nearest,d2)){m.distances.push_back(std::sqrt(d2));sum+=d2;}}m.overlap=moving.empty()?0.0:static_cast<double>(m.distances.size())/moving.size();if(!m.distances.empty()){m.rms=std::sqrt(sum/m.distances.size());std::sort(m.distances.begin(),m.distances.end());m.p95=m.distances[static_cast<std::size_t>((m.distances.size()-1)*.95)];}return m;}
+Metrics metrics(const std::vector<Vec3>& reference,const std::vector<Vec3>& moving,Vec3 pivot,const std::array<double,4>& t,double maxDistance){Metrics m;std::vector<Vec3> transformed;transformed.reserve(moving.size());for(auto p:moving)transformed.push_back(transformPoint(p,pivot,t));Index refIndex(reference,maxDistance),movIndex(transformed,maxDistance);double sum=0;std::size_t forward=0,backward=0;for(auto q:transformed){std::size_t nearest{};double d2{};if(refIndex.nearest(q,maxDistance,nearest,d2)){m.distances.push_back(std::sqrt(d2));sum+=d2;++forward;}}for(auto p:reference){std::size_t nearest{};double d2{};if(movIndex.nearest(p,maxDistance,nearest,d2)){m.distances.push_back(std::sqrt(d2));sum+=d2;++backward;}}double forwardOverlap=moving.empty()?0.0:(double)forward/moving.size(),backwardOverlap=reference.empty()?0.0:(double)backward/reference.size();m.overlap=std::min(forwardOverlap,backwardOverlap);if(!m.distances.empty()){m.rms=std::sqrt(sum/m.distances.size());std::sort(m.distances.begin(),m.distances.end());m.p95=m.distances[static_cast<std::size_t>((m.distances.size()-1)*.95)];}return m;}
 
 double cloudSpan(const std::vector<Point>& points){Vec3 lo{1e300,1e300,1e300},hi{-1e300,-1e300,-1e300};for(auto p:points){lo.x=std::min(lo.x,(double)p.x);lo.y=std::min(lo.y,(double)p.y);lo.z=std::min(lo.z,(double)p.z);hi.x=std::max(hi.x,(double)p.x);hi.y=std::max(hi.y,(double)p.y);hi.z=std::max(hi.z,(double)p.z);}return std::max({hi.x-lo.x,hi.y-lo.y,hi.z-lo.z});}
 double spanOf(const std::vector<Point>& a,const std::vector<Point>& b){return std::max(cloudSpan(a),cloudSpan(b));}
@@ -79,6 +80,14 @@ double spanOf(const std::vector<Point>& a,const std::vector<Point>& b){return st
 std::vector<Vec3> controlSample(const std::vector<Point>& points,std::size_t limit){std::vector<Vec3> result;if(points.empty())return result;const std::size_t stride=std::max<std::size_t>(1,(points.size()+limit-1)/limit);result.reserve(std::min(points.size(),limit));for(std::size_t i=0;i<points.size();i+=stride)result.push_back(toVec(points[i]));return result;}
 
 struct PoseVote { int count{}; Vec3 translation{}; };
+
+double normalYaw(const PlaneDescriptor& plane){return std::atan2(plane.normal[1],plane.normal[0])*180.0/3.14159265358979323846;}
+std::vector<std::array<double,4>> planeHypotheses(const std::vector<Point>& reference,const std::vector<Point>& moving,const GlobalRegistrationOptions& options){
+    const double span=spanOf(reference,moving);PlaneExtractionOptions extraction;extraction.voxelSize=std::max(span/100.0,1e-3);extraction.normalRadius=extraction.voxelSize*4.0;extraction.maximumPlaneDistance=extraction.voxelSize*1.5;extraction.minimumSupport=16;extraction.maximumPlanes=24;extraction.cancellation=options.refinement.cancellation;
+    const auto ref=extractPlanes(reference,extraction),mov=extractPlanes(moving,extraction);if(ref.empty()||mov.empty())return{};const Vec3 pivot=center(moving);std::vector<std::pair<double,std::array<double,4>>> scored;
+    for(const auto& m:mov){if(std::abs(m.normal[2])>.35)continue;for(const auto& r:ref){if(std::abs(r.normal[2])>.35)continue;double yaw=std::remainder(normalYaw(r)-normalYaw(m),360.0);Vec3 mc{m.centroid[0],m.centroid[1],m.centroid[2]},rc{r.centroid[0],r.centroid[1],r.centroid[2]};Vec3 rotated=rotateZ(mc,yaw),translation=sub(rc,rotated);double zVotes=0,zSum=0;for(const auto& mh:mov)if(std::abs(mh.normal[2])>.9)for(const auto& rh:ref)if(std::abs(rh.normal[2])>.9){zSum+=rh.centroid[2]-mh.centroid[2];++zVotes;}if(zVotes>0)translation.z=zSum/zVotes;auto pose=pivotTransform(translation,pivot,yaw);double support=std::min((double)m.support,(double)r.support);double ratio=std::min(m.area,r.area)/std::max(m.area,r.area);scored.push_back({-(support*ratio),pose});}}
+    std::stable_sort(scored.begin(),scored.end(),[](const auto&a,const auto&b){return a.first<b.first;});std::vector<std::array<double,4>> out;for(const auto& [_,candidate]:scored){bool duplicate=false;for(const auto& kept:out){double dx=candidate[0]-kept[0],dy=candidate[1]-kept[1],dz=candidate[2]-kept[2];if(std::sqrt(dx*dx+dy*dy+dz*dz)<span/50.0&&std::abs(std::remainder(candidate[3]-kept[3],360.0))<3.0){duplicate=true;break;}}if(!duplicate)out.push_back(candidate);if(out.size()>=48)break;}return out;
+}
 
 struct Descriptor { Sample sample; std::array<double,12> values{}; bool valid{}; };
 
@@ -133,7 +142,9 @@ RegistrationResult registerGlobalConstrained(const std::vector<Point>& reference
     if(!std::isfinite(options.yawStepDegrees)||options.yawStepDegrees<5.0||options.yawStepDegrees>90.0){rejected.reason="invalid yaw step";return rejected;}
     const double distinctTranslation=std::max(spanOf(reference,moving)/100.0,options.refinement.p95Limit*2.0);
     RegistrationResult best,second;double bestScore=std::numeric_limits<double>::infinity(),secondScore=bestScore;
-    auto hypotheses=featureHypotheses(reference,moving,options);
+    auto hypotheses=planeHypotheses(reference,moving,options);
+    auto featureCandidates=featureHypotheses(reference,moving,options);
+    hypotheses.insert(hypotheses.end(),featureCandidates.begin(),featureCandidates.end());
     if(hypotheses.empty()){const Vec3 referenceCenter=center(reference),movingCenter=center(moving),translation=sub(referenceCenter,movingCenter);for(double yaw=-180.0;yaw<180.0;yaw+=options.yawStepDegrees)hypotheses.push_back(pivotTransform(translation,movingCenter,yaw));}
     for(const auto& initial:hypotheses){
         if(options.refinement.cancellation&&options.refinement.cancellation->load()){rejected.reason="cancelled";return rejected;}

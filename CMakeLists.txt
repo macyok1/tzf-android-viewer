@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.22)
 project(tzf_tools LANGUAGES CXX)
 
-add_library(tzf-core STATIC app/src/main/cpp/tzf_core.cpp app/src/main/cpp/tzf_registration.cpp)
+add_library(tzf-core STATIC app/src/main/cpp/tzf_core.cpp app/src/main/cpp/tzf_geometry.cpp app/src/main/cpp/tzf_pose_graph.cpp app/src/main/cpp/tzf_registration.cpp)
 target_include_directories(tzf-core PUBLIC app/src/main/cpp)
 target_compile_features(tzf-core PUBLIC cxx_std_20)
 
