@@ -114,7 +114,8 @@ final class TransformGizmo {
             }
             previous = current;
         }
-        return bestRing <= RING_PICK_PX ? RZ : NONE;
+        if(bestRing <= RING_PICK_PX) return RZ;
+        return Math.hypot(x-center[0],y-center[1]) <= TARGET_RADIUS_PX ? XY : NONE;
     }
 
     private static float[] axis(int handle) {
