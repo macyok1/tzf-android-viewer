@@ -52,6 +52,7 @@ public final class MainActivity extends Activity {
     private final ConcurrentHashMap<String,NativePreviewSession> sessions=new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String,File> localFiles=new ConcurrentHashMap<>();
     private final Random random=new Random();
+    private final AutoPointBudget autoPointBudget=new AutoPointBudget();
     private ProjectStore store;
     private ProjectModel project;
     private PointCloudView cloud;
@@ -77,6 +78,7 @@ public final class MainActivity extends Activity {
         store=new ProjectStore(getFilesDir());String previewPath=getIntent().getStringExtra(EXTRA_X7_PREVIEW_PATH);previewMode=previewPath!=null;if(previewMode){previewFile=new File(previewPath);if(!previewFile.isFile()){finish();return;}project=ProjectModel.create("Предпросмотр X7",System.currentTimeMillis());project.pointBudget=10_000_000;ProjectModel.Scan scan=new ProjectModel.Scan(UUID.randomUUID().toString(),previewFile.getName());scan.uri=Uri.fromFile(previewFile).toString();project.root.add(scan);}else{String id=getIntent().getStringExtra(EXTRA_PROJECT_ID);if(id==null){finish();return;}try{project=store.load(id);}catch(Exception error){finish();return;}}
         setContentView(R.layout.activity_main);
         cloud=new PointCloudView(this);
+        cloud.setPerformanceListener(this::sampleAutoBudget);
         ((FrameLayout)findViewById(R.id.viewportContainer)).addView(cloud,0,new FrameLayout.LayoutParams(-1,-1));
         bindViews();bindCamera();bindTools();bindTree();
         cloud.setTransformListener(this::applyMovingWorldTransform);
@@ -229,7 +231,8 @@ public final class MainActivity extends Activity {
 
     private void saveProjectFiles(){String treeUri=getSharedPreferences("x7",MODE_PRIVATE).getString("storage_tree","");if(treeUri.isEmpty()){status.setText("Выберите папку хранения в настройках");return;}status.setText("Сохраняем проект…");worker.execute(()->{try{DocumentFile root=DocumentFile.fromTreeUri(this,Uri.parse(treeUri));if(root==null)throw new IOException("папка хранения недоступна");String folder=project.name.replaceAll("[\\\\/:*?\"<>|]","_");DocumentFile projectFolder=root.findFile(folder);if(projectFolder==null)projectFolder=root.createDirectory(folder);if(projectFolder==null)throw new IOException("не удалось создать папку проекта");DocumentFile scans=projectFolder.findFile("scans");if(scans==null)scans=projectFolder.createDirectory("scans");if(scans==null)throw new IOException("не удалось создать папку сканов");for(ProjectModel.Scan scan:allScans()){DocumentFile old=scans.findFile(scan.name);if(old!=null)old.delete();DocumentFile output=scans.createFile("application/octet-stream",scan.name);if(output==null)throw new IOException("не удалось создать "+scan.name);try(InputStream input="file".equals(Uri.parse(scan.uri).getScheme())?new java.io.FileInputStream(new File(Uri.parse(scan.uri).getPath())):getContentResolver().openInputStream(Uri.parse(scan.uri));java.io.OutputStream stream=getContentResolver().openOutputStream(output.getUri(),"w")){if(input==null||stream==null)throw new IOException("нет доступа к "+scan.name);byte[] buffer=new byte[64*1024];int count;while((count=input.read(buffer))!=-1)stream.write(buffer,0,count);}scan.uri=output.getUri().toString();}runOnUiThread(()->{changed();status.setText("Проект сохранён в выбранную папку");});}catch(Exception error){runOnUiThread(()->status.setText("Не удалось сохранить: "+error.getMessage()));}});}
     private int scanQuota(ProjectModel.Scan scan){if(project.pointBudget==-2)return (int)Math.min(50_000_000L,Math.max(20_000L,scan.sourcePointCount));return Math.max(20_000,effectiveBudget()/Math.max(1,project.scanCount()));}
-    private int effectiveBudget(){return project.pointBudget<0?new AutoPointBudget().current():project.pointBudget;}
+    private void sampleAutoBudget(float fps){if(project==null||project.pointBudget!=-1)return;int before=autoPointBudget.current(),after=autoPointBudget.sample(fps,false);if(after!=before){status.setText("AUTO: "+budgetLabel(after)+" · "+Math.round(fps)+" FPS");reloadAll();}}
+    private int effectiveBudget(){return project.pointBudget<0?autoPointBudget.current():project.pointBudget;}
     private String budgetLabel(int budget){if(budget==-2)return "ALL";if(budget<0)return "AUTO";if(budget>=1_000_000)return String.format(Locale.US,"%.0fM",budget/1_000_000f);return budget/1000+"k";}
     private int dp(int value){return Math.round(value*getResources().getDisplayMetrics().density);}
     private void changed(){project.touch(System.currentTimeMillis());if(previewMode)return;try{store.save(project);}catch(IOException error){status.setText("Не удалось сохранить проект: "+error.getMessage());}}

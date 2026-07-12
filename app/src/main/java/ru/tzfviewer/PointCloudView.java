@@ -18,6 +18,9 @@ import java.util.Map;
 import java.util.Set;
 
 public final class PointCloudView extends GLSurfaceView {
+    interface PerformanceListener { void onFrameRate(float fps); }
+    private PerformanceListener performanceListener;
+    void setPerformanceListener(PerformanceListener listener){performanceListener=listener;}
     interface MeasureListener { void onMeasure(float length,float deltaZ); }
     interface TransformListener { void onTransform(String targetNodeId,float[] values); }
     interface OrientationListener { void onOrientation(float yaw,float pitch); }
@@ -100,6 +103,7 @@ public final class PointCloudView extends GLSurfaceView {
         private int gridCount,width,height,program,position,matrix,color,size;
         private float cx,cy,cz,span=1f,panX,panY,panZ;
         private boolean inverseMvpValid,frameLockedForGizmo;
+        private long fpsStarted; private int fpsFrames;
         boolean orthographic,gridVisible=true;
         float yaw=25f,pitch=-18f,zoom=1f,pointSize=2f;
 
@@ -126,6 +130,7 @@ public final class PointCloudView extends GLSurfaceView {
             for(SceneCloud c:sceneClouds.values())if(c.visible)for(FloatBuffer chunk:c.chunks)draw(chunk,chunk.capacity()/3,GLES20.GL_POINTS,sceneMvp(c),c.r,c.g,c.b,1);
             if(activeTargetNodeId!=null&&!activeSceneIds.isEmpty()){GLES20.glDisable(GLES20.GL_DEPTH_TEST);drawGizmo();GLES20.glEnable(GLES20.GL_DEPTH_TEST);}
             if(measureCount==2){measureBuffer.position(0);measureBuffer.put(measure).position(0);GLES20.glLineWidth(3);draw(measureBuffer,2,GLES20.GL_LINES,primaryMvp,1,1,1,1);}
+            long now=System.nanoTime();if(fpsStarted==0)fpsStarted=now;if(++fpsFrames>=30){float fps=fpsFrames*1_000_000_000f/Math.max(1,now-fpsStarted);fpsFrames=0;fpsStarted=now;PerformanceListener listener=performanceListener;if(listener!=null)post(()->listener.onFrameRate(fps));}
             GLES20.glDisableVertexAttribArray(position);
         }
         void setMatrices(){float aspect=(float)width/Math.max(1,height);if(orthographic)Matrix.orthoM(projection,0,-2*aspect/zoom,2*aspect/zoom,-2/zoom,2/zoom,.1f,20);else Matrix.perspectiveM(projection,0,45,aspect,.1f,20);float yr=(float)Math.toRadians(yaw),pr=(float)Math.toRadians(pitch),d=orthographic?4f:3.5f/zoom;float ex=(float)(d*Math.cos(pr)*Math.sin(yr)),ey=(float)(-d*Math.cos(pr)*Math.cos(yr)),ez=(float)(-d*Math.sin(pr));Matrix.setLookAtM(view,0,ex+panX,ey+panY,ez+panZ,panX,panY,panZ,0,0,1);Matrix.setIdentityM(commonModel,0);Matrix.scaleM(commonModel,0,2/span,2/span,2/span);Matrix.translateM(commonModel,0,-cx,-cy,-cz);Matrix.multiplyMM(primaryMv,0,view,0,commonModel,0);Matrix.multiplyMM(primaryMvp,0,projection,0,primaryMv,0);inverseMvpValid=Matrix.invertM(inversePrimaryMvp,0,primaryMvp,0);System.arraycopy(primaryMvp,0,gridMvp,0,16);updateGizmoPivot();if(inverseMvpValid)gizmo.updateScale(gizmoPivot,primaryMvp,inversePrimaryMvp,width,height);}
