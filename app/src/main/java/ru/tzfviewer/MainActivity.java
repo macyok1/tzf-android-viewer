@@ -124,8 +124,8 @@ public final class MainActivity extends Activity {
         android.content.SharedPreferences preferences=getSharedPreferences("x7",MODE_PRIVATE);
         LinearLayout form=new LinearLayout(this);form.setOrientation(LinearLayout.VERTICAL);int pad=dp(18);form.setPadding(pad,0,pad,0);
         EditText host=new EditText(this);host.setHint("IP X7");host.setText(preferences.getString("host","192.168.43.1"));form.addView(host);
-        EditText user=new EditText(this);user.setHint("FTP логин X7");user.setText(preferences.getString("user",""));form.addView(user);
-        EditText password=new EditText(this);password.setHint("FTP пароль X7");password.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_PASSWORD);password.setText(preferences.getString("password",""));form.addView(password);
+        EditText user=new EditText(this);user.setHint("FTP логин X7");user.setText(preferences.getString("user","media"));form.addView(user);
+        EditText password=new EditText(this);password.setHint("FTP пароль X7");password.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_PASSWORD);password.setText(preferences.getString("password","media"));form.addView(password);
         new AlertDialog.Builder(this).setTitle("Подключить Trimble X7").setMessage("Телефон должен быть подключён к Wi‑Fi X7.").setView(form).setNegativeButton("Отмена",null).setPositiveButton("Подключить",(d,w)->{
             String h=host.getText().toString().trim(),u=user.getText().toString().trim(),p=password.getText().toString();
             if(h.isEmpty()||u.isEmpty()||p.isEmpty()){status.setText("Укажите IP и FTP доступ X7");return;}
