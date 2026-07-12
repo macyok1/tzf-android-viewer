@@ -3,6 +3,7 @@
 #include "tzf_core.h"
 
 #include <array>
+#include <atomic>
 #include <cstddef>
 #include <string>
 #include <vector>
@@ -15,6 +16,7 @@ struct RegistrationOptions {
     double rmsLimit{0.003};
     double p95Limit{0.008};
     double minimumOverlap{0.25};
+    const std::atomic_bool* cancellation{};
 };
 
 struct RegistrationResult {

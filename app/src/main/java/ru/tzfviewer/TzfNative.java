@@ -22,4 +22,5 @@ final class TzfNative {
             throws java.io.IOException;
     static native RegistrationResult registerPointCloudsGlobal(float[] referenceXyz, float[] movingXyz,
             double rmsLimit, double p95Limit) throws java.io.IOException;
+    static native void cancelRegistration();
 }
