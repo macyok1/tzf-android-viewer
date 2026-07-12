@@ -46,7 +46,7 @@ CI задаёт монотонный `versionCode` из `GITHUB_RUN_NUMBER` и `
 
 ## Безопасность
 
-- только HTTPS URL на `github.com` или `objects.githubusercontent.com`;
+- только HTTPS URL на `github.com`, `objects.githubusercontent.com` или официальный redirect-host `release-assets.githubusercontent.com`;
 - обязательная проверка SHA-256 до запуска installer;
 - `FileProvider` экспортирован=false и предоставляет только cache-подкаталог обновлений;
 - APK невозможно применить поверх приложения с другой подписью;

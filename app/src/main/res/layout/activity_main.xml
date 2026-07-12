@@ -60,6 +60,7 @@
         android:background="@color/panel" android:visibility="gone" android:elevation="12dp">
         <LinearLayout android:layout_width="match_parent" android:layout_height="36dp" android:gravity="center_vertical">
             <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="center_vertical" android:text="ПАРАМЕТРЫ СШИВКИ" android:textColor="@color/text_primary" android:textStyle="bold" />
+            <Button android:id="@+id/updateApp" style="@style/CompactTool" android:layout_width="96dp" android:layout_height="36dp" android:text="Обновить" android:textSize="11sp" />
             <Button android:id="@+id/closeSettings" style="@style/CompactTool" android:layout_width="36dp" android:layout_height="36dp" android:text="⌄" />
         </LinearLayout>
         <TextView android:id="@+id/transformSummary" android:layout_width="match_parent" android:layout_height="32dp" android:gravity="center_vertical" android:textColor="@color/amber" android:fontFamily="monospace" />
