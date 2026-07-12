@@ -49,6 +49,11 @@ The `X7` button is a connection action only. After a successful connection it
 opens a dedicated X7 action menu: `New scan`, `Download scan`, and
 `Disconnect`. Project selection happens only after the user chooses an action.
 
+The action menu also offers `Preview scan`. It downloads one selected completed
+TZF into cache and opens an isolated viewer session at the maximum point
+budget. Preview never adds a scan to the local project; closing the preview
+removes its temporary file and returns to the project workspace.
+
 ## Error handling
 
 The flow must stop safely on: no Wi-Fi route to X7, API timeout/non-success
