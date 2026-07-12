@@ -10,6 +10,7 @@ final class TzfNative {
     static native float[] decodePreview(String localPath, int maxPoints, int tileStride)
             throws java.io.IOException;
     static native long openPreviewSession(String localPath) throws java.io.IOException;
+    static native long previewSessionSourcePointCount(long handle) throws java.io.IOException;
     static native void preparePreviewSession(long handle,int maxPoints) throws java.io.IOException;
     static native float[] nextPreviewChunk(long handle,int maxPoints) throws java.io.IOException;
     static native void closePreviewSession(long handle);
