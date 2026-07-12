@@ -160,6 +160,16 @@ int main() {
     assert(std::abs(registration.transform[2] - 0.04) < 0.02);
     assert(std::abs(registration.transform[3] - 7.0) < 0.5);
 
+    tzf::GlobalRegistrationOptions globalOptions;
+    globalOptions.refinement = registrationOptions;
+    globalOptions.yawStepDegrees = 10.0;
+    const auto global = tzf::registerGlobalConstrained(reference, moving, globalOptions);
+    assert(global.accepted);
+    assert(std::abs(global.transform[0] - 0.15) < 0.03);
+    assert(std::abs(global.transform[1] + 0.08) < 0.03);
+    assert(std::abs(global.transform[2] - 0.04) < 0.03);
+    assert(std::abs(std::remainder(global.transform[3] - 7.0,360.0)) < 1.0);
+
     auto warningOptions = registrationOptions;
     warningOptions.rmsLimit = 1e-12;
     warningOptions.p95Limit = 1e-12;

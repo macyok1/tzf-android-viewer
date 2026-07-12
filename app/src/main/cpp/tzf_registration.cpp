@@ -80,7 +80,26 @@ std::vector<Vec3> controlSample(const std::vector<Point>& points,std::size_t lim
 
 struct PoseVote { int count{}; Vec3 translation{}; };
 
+struct Descriptor { Sample sample; std::array<double,12> values{}; bool valid{}; };
+
+std::vector<Descriptor> describe(const std::vector<Sample>& samples,double radius,std::size_t limit){
+    std::vector<Vec3> points;points.reserve(samples.size());for(const auto& sample:samples)points.push_back(sample.point);Index index(points,radius);const std::size_t stride=std::max<std::size_t>(1,samples.size()/limit);std::vector<Descriptor> out;
+    for(std::size_t i=0;i<samples.size();i+=stride){if(!samples[i].hasNormal)continue;Descriptor descriptor;descriptor.sample=samples[i];int neighbours=0;index.nearby(samples[i].point,1,[&](std::size_t j){if(i==j||!samples[j].hasNormal)return;const Vec3 delta=sub(samples[j].point,samples[i].point);const double distance=std::sqrt(length2(delta));if(distance<=1e-6||distance>radius)return;const int distanceBin=std::min(2,static_cast<int>(distance/radius*3.0));const int normalBin=std::min(3,static_cast<int>(std::abs(dot(samples[i].normal,samples[j].normal))*4.0));descriptor.values[distanceBin*4+normalBin]+=1.0;++neighbours;});if(neighbours<8)continue;double norm=0;for(double value:descriptor.values)norm+=value*value;if(norm<=0)continue;for(double& value:descriptor.values)value/=std::sqrt(norm);descriptor.valid=true;out.push_back(descriptor);}return out;
+}
+
+double descriptorDistance(const Descriptor& a,const Descriptor& b){double sum=0;for(std::size_t i=0;i<a.values.size();++i){const double delta=a.values[i]-b.values[i];sum+=delta*delta;}return sum;}
+
+std::vector<std::array<double,4>> descriptorHypotheses(const std::vector<Point>& reference,const std::vector<Point>& moving,const GlobalRegistrationOptions& options){
+    const double span=spanOf(reference,moving),voxel=std::max(span/80.0,1e-3);const auto refSamples=normals(downsample(reference,voxel),voxel*5.5),movSamples=normals(downsample(moving,voxel),voxel*5.5);const auto ref=describe(refSamples,voxel*5.5,320),mov=describe(movSamples,voxel*5.5,320);if(ref.size()<12||mov.size()<12)return {};
+    std::vector<std::size_t> movingBest(mov.size()),referenceBest(ref.size());std::vector<double> movingDistance(mov.size(),std::numeric_limits<double>::infinity());for(std::size_t m=0;m<mov.size();++m)for(std::size_t r=0;r<ref.size();++r){const double distance=descriptorDistance(mov[m],ref[r]);if(distance<movingDistance[m]){movingDistance[m]=distance;movingBest[m]=r;}}
+    for(std::size_t r=0;r<ref.size();++r){double best=std::numeric_limits<double>::infinity();for(std::size_t m=0;m<mov.size();++m){const double distance=descriptorDistance(ref[r],mov[m]);if(distance<best){best=distance;referenceBest[r]=m;}}}
+    std::vector<std::pair<std::size_t,std::size_t>> matches;for(std::size_t m=0;m<mov.size();++m)if(referenceBest[movingBest[m]]==m&&movingDistance[m]<.75)matches.push_back({m,movingBest[m]});if(matches.size()<4)return {};
+    const Vec3 pivot=center(moving);std::vector<std::array<double,4>> out;const std::size_t stride=std::max<std::size_t>(1,matches.size()/80);for(std::size_t ai=0;ai<matches.size();ai+=stride)for(std::size_t bi=ai+stride;bi<matches.size();bi+=stride){const auto& ma=mov[matches[ai].first].sample.point;const auto& mb=mov[matches[bi].first].sample.point;const auto& ra=ref[matches[ai].second].sample.point;const auto& rb=ref[matches[bi].second].sample.point;const Vec3 dm=sub(mb,ma),dr=sub(rb,ra);if(std::hypot(dm.x,dm.y)<voxel||std::hypot(dr.x,dr.y)<voxel)continue;const double yaw=std::atan2(dm.x*dr.y-dm.y*dr.x,dm.x*dr.x+dm.y*dr.y)*180.0/3.14159265358979323846;const Vec3 direct=sub(ra,rotateZ(ma,yaw));const auto hypothesis=pivotTransform(direct,pivot,yaw);bool distinct=true;for(const auto& old:out){const double dx=hypothesis[0]-old[0],dy=hypothesis[1]-old[1],dz=hypothesis[2]-old[2];if(std::sqrt(dx*dx+dy*dy+dz*dz)<voxel*3&&std::abs(std::remainder(hypothesis[3]-old[3],360.0))<3){distinct=false;break;}}if(distinct)out.push_back(hypothesis);if(out.size()>=180)return out;}
+    return out;
+}
+
 std::vector<std::array<double,4>> featureHypotheses(const std::vector<Point>& reference,const std::vector<Point>& moving,const GlobalRegistrationOptions& options){
+    auto descriptorCandidates=descriptorHypotheses(reference,moving,options);if(!descriptorCandidates.empty())return descriptorCandidates;
     const double span=spanOf(reference,moving),voxel=std::max(span/80.0,1e-3),cellSize=std::max(voxel*2.0,span/160.0);
     const auto ref=downsample(reference,voxel),mov=downsample(moving,voxel);
     if(ref.size()<30||mov.size()<30)return {};
