@@ -51,9 +51,11 @@ opens a dedicated X7 action menu: `New scan`, `Download scan`, and
 
 The X7 connection uses the X7 access-point address and FTP account confirmed
 for this deployment, without a credentials dialog. `Download scan` supports a
-multi-selection list and an `Add all` action. The user can choose a persistent
-storage tree through the Android system picker; each downloaded TZF is written
-to a project-named folder below that tree and is added to the local project.
+multi-selection list and an `Add all` action. The storage tree is selected in
+application settings, not in the X7 menu. Import only adds scans to the
+working project. A project-level Save action copies every project TZF to
+`<storage tree>/<project name>/scans/`, overwrites matching names, and updates
+the project to reference those persistent copies.
 
 The action menu also offers `Preview scan`. It downloads one selected completed
 TZF into cache and opens an isolated viewer session at the maximum point

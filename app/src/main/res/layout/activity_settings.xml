@@ -13,4 +13,9 @@
         <Button android:id="@+id/settingsUpdateApp" style="@style/ToolButton" android:layout_width="match_parent" android:layout_height="48dp" android:text="Проверить обновление" />
         <TextView android:id="@+id/settingsUpdateStatus" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="48dp" android:gravity="center_vertical" android:text="Нажмите, чтобы проверить новую версию" android:textColor="@color/text_secondary" />
     </LinearLayout>
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:orientation="vertical" android:padding="16dp" android:background="@color/panel">
+        <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Хранение сканов" android:textColor="@color/text_primary" android:textSize="18sp" android:textStyle="bold" />
+        <TextView android:id="@+id/storageFolderStatus" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="40dp" android:gravity="center_vertical" android:text="Папка не выбрана" android:textColor="@color/text_secondary" />
+        <Button android:id="@+id/selectStorageFolder" style="@style/ToolButton" android:layout_width="match_parent" android:layout_height="48dp" android:text="Выбрать папку хранения" />
+    </LinearLayout>
 </LinearLayout>
