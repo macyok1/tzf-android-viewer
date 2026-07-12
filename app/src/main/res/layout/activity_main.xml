@@ -45,6 +45,8 @@
         <Button android:id="@+id/pairDetails" style="@style/CompactTool" android:layout_width="44dp" android:layout_height="48dp" android:text="⌃" android:contentDescription="Параметры сшивки" />
         <ProgressBar android:id="@+id/registrationProgress" style="?android:attr/progressBarStyleHorizontal" android:layout_width="72dp" android:layout_height="5dp" android:indeterminate="false" android:max="100" android:visibility="gone" />
         <Button android:id="@+id/cancelRegistration" style="@style/ToolButton" android:layout_width="82dp" android:layout_height="48dp" android:text="Отмена" android:visibility="gone" />
+        <Button android:id="@+id/applyCandidate" style="@style/ToolButton" android:layout_width="96dp" android:layout_height="48dp" android:text="Применить" android:visibility="gone" />
+        <Button android:id="@+id/rejectCandidate" style="@style/ToolButton" android:layout_width="82dp" android:layout_height="48dp" android:text="Отмена" android:visibility="gone" />
     </LinearLayout>
 
     <LinearLayout android:id="@+id/scanPanel" android:layout_width="match_parent" android:layout_height="220dp"

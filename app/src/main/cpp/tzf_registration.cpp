@@ -71,7 +71,8 @@ bool solve4(double a[4][4],double b[4],double x[4]){
 struct Metrics{double rms{},p95{},overlap{};std::vector<double> distances;};
 Metrics metrics(const std::vector<Vec3>& reference,const std::vector<Vec3>& moving,Vec3 pivot,const std::array<double,4>& t,double maxDistance){Index index(reference,maxDistance);Metrics m;double sum=0;for(auto p:moving){auto q=transformPoint(p,pivot,t);std::size_t nearest{};double d2{};if(index.nearest(q,maxDistance,nearest,d2)){m.distances.push_back(std::sqrt(d2));sum+=d2;}}m.overlap=moving.empty()?0.0:static_cast<double>(m.distances.size())/moving.size();if(!m.distances.empty()){m.rms=std::sqrt(sum/m.distances.size());std::sort(m.distances.begin(),m.distances.end());m.p95=m.distances[static_cast<std::size_t>((m.distances.size()-1)*.95)];}return m;}
 
-double spanOf(const std::vector<Point>& a,const std::vector<Point>& b){Vec3 lo{1e300,1e300,1e300},hi{-1e300,-1e300,-1e300};for(const auto& list:{&a,&b})for(auto p:*list){lo.x=std::min(lo.x,(double)p.x);lo.y=std::min(lo.y,(double)p.y);lo.z=std::min(lo.z,(double)p.z);hi.x=std::max(hi.x,(double)p.x);hi.y=std::max(hi.y,(double)p.y);hi.z=std::max(hi.z,(double)p.z);}return std::max({hi.x-lo.x,hi.y-lo.y,hi.z-lo.z});}
+double cloudSpan(const std::vector<Point>& points){Vec3 lo{1e300,1e300,1e300},hi{-1e300,-1e300,-1e300};for(auto p:points){lo.x=std::min(lo.x,(double)p.x);lo.y=std::min(lo.y,(double)p.y);lo.z=std::min(lo.z,(double)p.z);hi.x=std::max(hi.x,(double)p.x);hi.y=std::max(hi.y,(double)p.y);hi.z=std::max(hi.z,(double)p.z);}return std::max({hi.x-lo.x,hi.y-lo.y,hi.z-lo.z});}
+double spanOf(const std::vector<Point>& a,const std::vector<Point>& b){return std::max(cloudSpan(a),cloudSpan(b));}
 
 std::vector<Vec3> controlSample(const std::vector<Point>& points,std::size_t limit){std::vector<Vec3> result;if(points.empty())return result;const std::size_t stride=std::max<std::size_t>(1,(points.size()+limit-1)/limit);result.reserve(std::min(points.size(),limit));for(std::size_t i=0;i<points.size();i+=stride)result.push_back(toVec(points[i]));return result;}
 
@@ -84,5 +85,26 @@ RegistrationResult registerConstrained(const std::vector<Point>& reference,const
         for(int iteration=0;iteration<options.iterationsPerLevel;++iteration){double normal[4][4]{},rhs[4]{};std::size_t used=0;double absSum=0;for(auto source:mov){Vec3 p=transformPoint(source,pivot,result.transform);std::size_t nearest{};double d2{};if(!index.nearest(p,maxDistance,nearest,d2)||!samples[nearest].hasNormal)continue;const Vec3 n=samples[nearest].normal;double residual=dot(sub(p,samples[nearest].point),n);double huber=voxel;double weight=std::abs(residual)<=huber?1.0:huber/std::abs(residual);Vec3 relative=sub(p,{pivot.x+result.transform[0],pivot.y+result.transform[1],pivot.z+result.transform[2]});double j[4]{n.x,n.y,n.z,(-relative.y*n.x+relative.x*n.y)};for(int r=0;r<4;++r){rhs[r]+=-weight*j[r]*residual;for(int c=0;c<4;++c)normal[r][c]+=weight*j[r]*j[c];}absSum+=std::abs(residual);++used;}if(used<30||static_cast<double>(used)/mov.size()<options.minimumOverlap){result.reason="insufficient overlap";return result;}double delta[4]{};if(!solve4(normal,rhs,delta)){result.reason="degenerate geometry";return result;}result.transform[0]+=delta[0];result.transform[1]+=delta[1];result.transform[2]+=delta[2];result.transform[3]+=delta[3]*180.0/3.14159265358979323846;++result.iterations;if(std::sqrt(delta[0]*delta[0]+delta[1]*delta[1]+delta[2]*delta[2])<voxel*1e-4&&std::abs(delta[3])<1e-5)break;if(!std::isfinite(absSum)){result.reason="registration diverged";return result;}}
     }
     auto controlRef=controlSample(reference,120000),controlMov=controlSample(moving,120000);auto m=metrics(controlRef,controlMov,pivot,result.transform,std::max(options.p95Limit*4.0,span/100.0));result.rms=m.rms;result.p95=m.p95;result.overlap=m.overlap;if(m.overlap<options.minimumOverlap)result.reason="insufficient validation overlap";else if(m.rms>options.rmsLimit)result.reason="RMS exceeds threshold";else if(m.p95>options.p95Limit)result.reason="P95 exceeds threshold";else{result.accepted=true;result.reason="accepted";}return result;}
+
+RegistrationResult registerGlobalConstrained(const std::vector<Point>& reference,const std::vector<Point>& moving,const GlobalRegistrationOptions& options){
+    RegistrationResult rejected;if(reference.size()<100||moving.size()<100){rejected.reason="not enough points";return rejected;}
+    if(!std::isfinite(options.yawStepDegrees)||options.yawStepDegrees<5.0||options.yawStepDegrees>90.0){rejected.reason="invalid yaw step";return rejected;}
+    const Vec3 referenceCenter=center(reference),movingCenter=center(moving);
+    const std::array<double,3> translation{referenceCenter.x-movingCenter.x,referenceCenter.y-movingCenter.y,referenceCenter.z-movingCenter.z};
+    const double distinctTranslation=std::max(spanOf(reference,moving)/100.0,options.refinement.p95Limit*2.0);
+    RegistrationResult best,second;double bestScore=std::numeric_limits<double>::infinity(),secondScore=bestScore;
+    for(double yaw=-180.0;yaw<180.0;yaw+=options.yawStepDegrees){
+        auto candidate=registerConstrained(reference,moving,{translation[0],translation[1],translation[2],yaw},options.refinement);
+        if(!candidate.accepted)continue;
+        const double score=candidate.rms+candidate.p95+(1.0-candidate.overlap)*options.refinement.p95Limit;
+        if(best.accepted){double dx=candidate.transform[0]-best.transform[0],dy=candidate.transform[1]-best.transform[1],dz=candidate.transform[2]-best.transform[2];double da=std::remainder(candidate.transform[3]-best.transform[3],360.0);if(std::sqrt(dx*dx+dy*dy+dz*dz)<distinctTranslation&&std::abs(da)<1.0){if(score<bestScore){best=candidate;bestScore=score;}continue;}}
+        if(score<bestScore){second=best;secondScore=bestScore;best=candidate;bestScore=score;}else if(score<secondScore){second=candidate;secondScore=score;}
+    }
+    if(!best.accepted){rejected.reason="no global hypothesis";return rejected;}
+    if(second.accepted&&secondScore<=bestScore*(1.0+options.ambiguityRatio)){
+        best.accepted=false;best.reason="ambiguous global hypotheses";return best;
+    }
+    best.reason="accepted global";return best;
+}
 
 } // namespace tzf
