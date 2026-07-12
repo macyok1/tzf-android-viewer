@@ -124,7 +124,7 @@ public final class PointCloudView extends GLSurfaceView {
             GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT|GLES20.GL_DEPTH_BUFFER_BIT);if(sceneClouds.isEmpty())return;setMatrices();GLES20.glUseProgram(program);GLES20.glEnableVertexAttribArray(position);GLES20.glUniform1f(size,pointSize);
             if(gridVisible&&gridBuffer!=null){draw(gridBuffer,gridCount,GLES20.GL_LINES,gridMvp,.20f,.28f,.34f,1);drawAxes();}
             for(SceneCloud c:sceneClouds.values())if(c.visible)for(FloatBuffer chunk:c.chunks)draw(chunk,chunk.capacity()/3,GLES20.GL_POINTS,sceneMvp(c),c.r,c.g,c.b,1);
-            if(activeTargetNodeId!=null&&!activeSceneIds.isEmpty())drawGizmo();
+            if(activeTargetNodeId!=null&&!activeSceneIds.isEmpty()){GLES20.glDisable(GLES20.GL_DEPTH_TEST);drawGizmo();GLES20.glEnable(GLES20.GL_DEPTH_TEST);}
             if(measureCount==2){measureBuffer.position(0);measureBuffer.put(measure).position(0);GLES20.glLineWidth(3);draw(measureBuffer,2,GLES20.GL_LINES,primaryMvp,1,1,1,1);}
             GLES20.glDisableVertexAttribArray(position);
         }
