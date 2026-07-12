@@ -29,23 +29,26 @@
         android:layout_gravity="top|end" android:layout_marginTop="58dp" android:layout_marginEnd="10dp" />
 
     <TextView android:id="@+id/status" android:layout_width="wrap_content" android:layout_height="wrap_content"
-        android:layout_gravity="bottom|start" android:layout_marginStart="60dp" android:layout_marginBottom="10dp"
+        android:layout_gravity="bottom|start" android:layout_marginStart="60dp" android:layout_marginBottom="64dp"
         android:maxWidth="280dp" android:padding="7dp" android:background="@color/panel"
         android:text="Добавьте TZF кнопкой ＋" android:textColor="@color/text_secondary" />
 
-    <LinearLayout android:id="@+id/pairCard" android:layout_width="210dp" android:layout_height="wrap_content"
-        android:layout_gravity="bottom|end" android:layout_margin="10dp" android:orientation="vertical"
-        android:padding="7dp" android:background="@color/panel" android:elevation="8dp">
-        <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="ВЫБРАНО ДЛЯ СШИВКИ" android:textSize="10sp" android:textColor="@color/text_secondary" />
-        <TextView android:id="@+id/referenceLabel" android:layout_width="match_parent" android:layout_height="34dp" android:gravity="center_vertical" android:text="R  не выбран" android:textColor="@color/cyan" />
-        <TextView android:id="@+id/movingLabel" android:layout_width="match_parent" android:layout_height="34dp" android:gravity="center_vertical" android:text="M  не выбран" android:textColor="@color/amber" />
-        <Button android:id="@+id/registerScans" style="@style/ToolButton" android:layout_width="match_parent" android:layout_height="42dp" android:text="Точная сшивка" />
-        <ProgressBar android:id="@+id/registrationProgress" style="?android:attr/progressBarStyleHorizontal" android:layout_width="match_parent" android:layout_height="5dp" android:indeterminate="true" android:visibility="gone" />
-        <Button android:id="@+id/cancelRegistration" style="@style/ToolButton" android:layout_width="match_parent" android:layout_height="40dp" android:text="Отмена" android:visibility="gone" />
+    <LinearLayout android:id="@+id/pairCard" android:layout_width="match_parent" android:layout_height="54dp"
+        android:layout_gravity="bottom" android:layout_margin="8dp" android:orientation="horizontal"
+        android:gravity="center_vertical" android:paddingHorizontal="6dp" android:background="@color/panel" android:elevation="8dp">
+        <TextView android:id="@+id/referenceLabel" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1"
+            android:gravity="center_vertical" android:maxLines="1" android:ellipsize="end" android:paddingHorizontal="6dp" android:text="R  не выбран" android:textColor="@color/cyan" />
+        <TextView android:id="@+id/movingLabel" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1"
+            android:gravity="center_vertical" android:maxLines="1" android:ellipsize="end" android:paddingHorizontal="6dp" android:text="M  не выбран" android:textColor="@color/amber" />
+        <Button android:id="@+id/registerScans" style="@style/ToolButton" android:layout_width="82dp" android:layout_height="48dp" android:text="Быстро" />
+        <Button android:id="@+id/deepRegistration" style="@style/ToolButton" android:layout_width="82dp" android:layout_height="48dp" android:text="Глубоко" />
+        <Button android:id="@+id/pairDetails" style="@style/CompactTool" android:layout_width="44dp" android:layout_height="48dp" android:text="⌃" android:contentDescription="Параметры сшивки" />
+        <ProgressBar android:id="@+id/registrationProgress" style="?android:attr/progressBarStyleHorizontal" android:layout_width="72dp" android:layout_height="5dp" android:indeterminate="false" android:max="100" android:visibility="gone" />
+        <Button android:id="@+id/cancelRegistration" style="@style/ToolButton" android:layout_width="82dp" android:layout_height="48dp" android:text="Отмена" android:visibility="gone" />
     </LinearLayout>
 
     <LinearLayout android:id="@+id/scanPanel" android:layout_width="match_parent" android:layout_height="220dp"
-        android:layout_gravity="bottom" android:orientation="vertical" android:background="@color/panel"
+        android:layout_gravity="bottom" android:layout_marginBottom="70dp" android:orientation="vertical" android:background="@color/panel"
         android:visibility="gone" android:elevation="12dp">
         <LinearLayout android:layout_width="match_parent" android:layout_height="36dp" android:gravity="center_vertical" android:paddingHorizontal="10dp">
             <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="center_vertical" android:text="СКАНЫ И СВЯЗКИ" android:textColor="@color/text_primary" android:textStyle="bold" />
@@ -57,7 +60,7 @@
     </LinearLayout>
 
     <LinearLayout android:id="@+id/settingsPanel" android:layout_width="match_parent" android:layout_height="220dp"
-        android:layout_gravity="bottom" android:orientation="vertical" android:padding="8dp"
+        android:layout_gravity="bottom" android:layout_marginBottom="70dp" android:orientation="vertical" android:padding="8dp"
         android:background="@color/panel" android:visibility="gone" android:elevation="12dp">
         <LinearLayout android:layout_width="match_parent" android:layout_height="36dp" android:gravity="center_vertical">
             <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="center_vertical" android:text="ПАРАМЕТРЫ СШИВКИ" android:textColor="@color/text_primary" android:textStyle="bold" />

@@ -45,7 +45,7 @@ public final class MainActivity extends Activity {
     private ScanTreePanel tree;
     private TextView status,referenceLabel,movingLabel,transformSummary;
     private EditText rmsLimit,p95Limit;
-    private Button registerButton,cancelButton,pointSizeButton,budgetButton;
+    private Button registerButton,deepRegisterButton,cancelButton,pointSizeButton,budgetButton;
     private ProgressBar registrationProgress;
     private View scanPanel,settingsPanel;
     private int budgetIndex,pointSizeIndex;
@@ -66,7 +66,7 @@ public final class MainActivity extends Activity {
     private void bindViews(){
         ((TextView)findViewById(R.id.projectTitle)).setText(project.name);
         status=findViewById(R.id.status);referenceLabel=findViewById(R.id.referenceLabel);movingLabel=findViewById(R.id.movingLabel);transformSummary=findViewById(R.id.transformSummary);
-        rmsLimit=findViewById(R.id.rmsLimit);p95Limit=findViewById(R.id.p95Limit);registerButton=findViewById(R.id.registerScans);cancelButton=findViewById(R.id.cancelRegistration);registrationProgress=findViewById(R.id.registrationProgress);
+        rmsLimit=findViewById(R.id.rmsLimit);p95Limit=findViewById(R.id.p95Limit);registerButton=findViewById(R.id.registerScans);deepRegisterButton=findViewById(R.id.deepRegistration);cancelButton=findViewById(R.id.cancelRegistration);registrationProgress=findViewById(R.id.registrationProgress);
         scanPanel=findViewById(R.id.scanPanel);settingsPanel=findViewById(R.id.settingsPanel);tree=findViewById(R.id.scanTree);pointSizeButton=findViewById(R.id.pointSize);budgetButton=findViewById(R.id.pointBudget);
     }
 
@@ -81,6 +81,7 @@ public final class MainActivity extends Activity {
         findViewById(R.id.compactFit).setOnClickListener(v->{if(readyScans().isEmpty())status.setText("Нет видимых готовых облаков");else cloud.fitView();});
         findViewById(R.id.scans).setOnClickListener(v->togglePanel(scanPanel,settingsPanel));findViewById(R.id.closeScans).setOnClickListener(v->scanPanel.setVisibility(View.GONE));
         findViewById(R.id.moreTools).setOnClickListener(v->togglePanel(settingsPanel,scanPanel));findViewById(R.id.closeSettings).setOnClickListener(v->settingsPanel.setVisibility(View.GONE));
+        findViewById(R.id.pairDetails).setOnClickListener(v->togglePanel(settingsPanel,scanPanel));
         findViewById(R.id.compactProjection).setOnClickListener(v->{project.orthographic=!project.orthographic;cloud.toggleProjection();changed();});
         findViewById(R.id.grid).setOnClickListener(v->{project.gridVisible=!project.gridVisible;cloud.setGridVisible(project.gridVisible);changed();});
         for(int i=0;i<POINT_BUDGETS.length;i++)if(POINT_BUDGETS[i]==project.pointBudget)budgetIndex=i;for(int i=0;i<POINT_SIZES.length;i++)if(POINT_SIZES[i]==project.pointSize)pointSizeIndex=i;
@@ -88,7 +89,7 @@ public final class MainActivity extends Activity {
         pointSizeButton.setOnClickListener(v->{pointSizeIndex=(pointSizeIndex+1)%POINT_SIZES.length;project.pointSize=POINT_SIZES[pointSizeIndex];cloud.setPointSize(project.pointSize);pointSizeButton.setText("•• "+project.pointSize);changed();});
         budgetButton.setOnClickListener(v->{budgetIndex=(budgetIndex+1)%POINT_BUDGETS.length;project.pointBudget=POINT_BUDGETS[budgetIndex];budgetButton.setText(budgetLabel(project.pointBudget));reloadAll();changed();});
         Button measure=findViewById(R.id.measure);measure.setOnClickListener(v->{measure.setSelected(!measure.isSelected());cloud.setMeasureMode(measure.isSelected(),(length,dz)->status.setText(String.format(Locale.US,"Расстояние %.3f · ΔZ %.3f",length,dz)));});
-        registerButton.setOnClickListener(v->startRegistration());cancelButton.setOnClickListener(v->cancelRegistration());
+        registerButton.setOnClickListener(v->startRegistration());deepRegisterButton.setEnabled(false);deepRegisterButton.setContentDescription("Глубокий поиск будет доступен после подготовки глобальной регистрации");cancelButton.setOnClickListener(v->cancelRegistration());
         findViewById(R.id.resetTransform).setOnClickListener(v->resetMoving());findViewById(R.id.saveTransform).setOnClickListener(v->saveMovingSnapshot());findViewById(R.id.restoreTransform).setOnClickListener(v->restoreMovingSnapshot());
         setRegistrationRunning(false);
     }
@@ -133,7 +134,8 @@ public final class MainActivity extends Activity {
     private static float[] centerOf(float[] xyz){float[] b=SceneBounds.of(xyz);return new float[]{(b[0]+b[3])*.5f,(b[1]+b[4])*.5f,(b[2]+b[5])*.5f};}
     private void finishRegistration(int generation,RegistrationResult result,float[] pivot){if(registrationGeneration.get()!=generation)return;setRegistrationRunning(false);if(!result.accepted){status.setText("Сшивка отклонена: "+registrationReason(result.reason));return;}ProjectModel.Node moving=project.findNode(project.movingNodeId);if(moving==null)return;float[] world=RegistrationTransform.fromPivot(result.transform,pivot);float[] local=ProjectModel.relative(moving.parent().worldTransform(),world);System.arraycopy(local,0,moving.transform,0,4);changed();syncScene();updateRoleUi();status.setText(String.format(Locale.US,"Принято · RMS %.3f · P95 %.3f · %.0f%% · %d ит.",result.rms,result.p95,result.overlap*100,result.iterations));}
     private void cancelRegistration(){registrationGeneration.incrementAndGet();setRegistrationRunning(false);status.setText("Сшивка отменена");}
-    private void setRegistrationRunning(boolean running){registerButton.setEnabled(!running&&project!=null&&project.canRegister());cancelButton.setVisibility(running?View.VISIBLE:View.GONE);registrationProgress.setVisibility(running?View.VISIBLE:View.GONE);}
+    private void setRegistrationRunning(boolean running){renderRegistrationState(running?RegistrationUiState.running(RegistrationUiState.Stage.REFINING,50,"Точная сшивка"):RegistrationUiState.idle());}
+    private void renderRegistrationState(RegistrationUiState state){boolean ready=project!=null&&project.canRegister();registerButton.setEnabled(state.actionsEnabled()&&ready);deepRegisterButton.setEnabled(false);cancelButton.setVisibility(state.showCancel()?View.VISIBLE:View.GONE);registrationProgress.setVisibility(state.showProgress()?View.VISIBLE:View.GONE);registrationProgress.setProgress(state.progress);referenceLabel.setVisibility(state.running()?View.GONE:View.VISIBLE);movingLabel.setVisibility(state.running()?View.GONE:View.VISIBLE);registerButton.setVisibility(state.running()?View.GONE:View.VISIBLE);deepRegisterButton.setVisibility(state.running()?View.GONE:View.VISIBLE);}
     private double readPositive(EditText field){try{double v=Double.parseDouble(field.getText().toString());if(v>0){field.setError(null);return v;}}catch(NumberFormatException ignored){}field.setError("Введите положительное число");return Double.NaN;}
     private String registrationReason(String reason){if(reason.contains("overlap"))return "недостаточное перекрытие";if("degenerate geometry".equals(reason))return "неоднозначная геометрия";if(reason.contains("RMS"))return "RMS выше допуска";if(reason.contains("P95"))return "P95 выше допуска";if(reason.contains("points")||reason.contains("coverage"))return "недостаточно точек";return reason;}
 
