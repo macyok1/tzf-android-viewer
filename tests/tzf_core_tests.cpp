@@ -160,6 +160,14 @@ int main() {
     assert(std::abs(registration.transform[2] - 0.04) < 0.02);
     assert(std::abs(registration.transform[3] - 7.0) < 0.5);
 
+    auto warningOptions = registrationOptions;
+    warningOptions.rmsLimit = 1e-12;
+    warningOptions.p95Limit = 1e-12;
+    const auto warning = tzf::registerConstrained(
+        reference, moving, {0.10, -0.04, 0.02, 4.0}, warningOptions);
+    assert(warning.accepted);
+    assert(warning.reason.starts_with("quality warning:"));
+
     const auto rejected = tzf::registerConstrained(
         std::vector<tzf::Point>(20), std::vector<tzf::Point>(20), {});
     assert(!rejected.accepted);
