@@ -1,15 +1,19 @@
 package ru.tzfviewer;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.ClipData;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
 import android.provider.OpenableColumns;
 import android.view.View;
+import android.text.InputType;
 import android.widget.PopupMenu;
 import android.widget.Button;
 import android.widget.FrameLayout;
+import android.widget.EditText;
+import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.TextView;
 
@@ -49,7 +53,7 @@ public final class MainActivity extends Activity {
     private PointCloudView cloud;
     private ScanTreePanel tree;
     private TextView status,referenceLabel,movingLabel,transformSummary;
-    private Button cancelButton,applyCandidateButton,rejectCandidateButton,pointSizeButton,budgetButton,stitchMenuButton;
+    private Button cancelButton,applyCandidateButton,rejectCandidateButton,pointSizeButton,budgetButton,stitchMenuButton,scanX7Button;
     private ProgressBar registrationProgress;
     private View scanPanel,settingsPanel;
     private int budgetIndex,pointSizeIndex;
@@ -57,6 +61,7 @@ public final class MainActivity extends Activity {
     private float[] candidateWorld,candidateOriginalWorld;
     private List<ProjectModel.Scan> candidateGraphScans;
     private float[] candidateGraphWorld;
+    private boolean x7Running;
 
     @Override public void onCreate(Bundle state){
         super.onCreate(state);
@@ -75,7 +80,7 @@ public final class MainActivity extends Activity {
         ((TextView)findViewById(R.id.projectTitle)).setText(project.name);
         status=findViewById(R.id.status);referenceLabel=findViewById(R.id.referenceLabel);movingLabel=findViewById(R.id.movingLabel);transformSummary=findViewById(R.id.transformSummary);
         cancelButton=findViewById(R.id.cancelRegistration);applyCandidateButton=findViewById(R.id.applyCandidate);rejectCandidateButton=findViewById(R.id.rejectCandidate);registrationProgress=findViewById(R.id.registrationProgress);stitchMenuButton=findViewById(R.id.moreTools);
-        scanPanel=findViewById(R.id.scanPanel);settingsPanel=findViewById(R.id.settingsPanel);tree=findViewById(R.id.scanTree);pointSizeButton=findViewById(R.id.pointSize);budgetButton=findViewById(R.id.pointBudget);
+        scanPanel=findViewById(R.id.scanPanel);settingsPanel=findViewById(R.id.settingsPanel);tree=findViewById(R.id.scanTree);pointSizeButton=findViewById(R.id.pointSize);budgetButton=findViewById(R.id.pointBudget);scanX7Button=findViewById(R.id.scanX7);
     }
 
     private void bindCamera(){
@@ -85,6 +90,7 @@ public final class MainActivity extends Activity {
 
     private void bindTools(){
         findViewById(R.id.compactOpen).setOnClickListener(v->selectTzf());
+        scanX7Button.setOnClickListener(v->promptX7Connection());
         findViewById(R.id.backToProjects).setOnClickListener(v->navigateToProjects());
         findViewById(R.id.compactFit).setOnClickListener(v->{if(readyScans().isEmpty())status.setText("Нет видимых готовых облаков");else cloud.fitView();});
         findViewById(R.id.scans).setOnClickListener(v->togglePanel(scanPanel,settingsPanel));findViewById(R.id.closeScans).setOnClickListener(v->scanPanel.setVisibility(View.GONE));
@@ -114,6 +120,41 @@ public final class MainActivity extends Activity {
         menu.show();
     }
 
+    private void promptX7Connection(){
+        android.content.SharedPreferences preferences=getSharedPreferences("x7",MODE_PRIVATE);
+        LinearLayout form=new LinearLayout(this);form.setOrientation(LinearLayout.VERTICAL);int pad=dp(18);form.setPadding(pad,0,pad,0);
+        EditText host=new EditText(this);host.setHint("IP X7");host.setText(preferences.getString("host","192.168.43.1"));form.addView(host);
+        EditText user=new EditText(this);user.setHint("FTP логин X7");user.setText(preferences.getString("user",""));form.addView(user);
+        EditText password=new EditText(this);password.setHint("FTP пароль X7");password.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_PASSWORD);password.setText(preferences.getString("password",""));form.addView(password);
+        new AlertDialog.Builder(this).setTitle("Подключить Trimble X7").setMessage("Телефон должен быть подключён к Wi‑Fi X7.").setView(form).setNegativeButton("Отмена",null).setPositiveButton("Подключить",(d,w)->{
+            String h=host.getText().toString().trim(),u=user.getText().toString().trim(),p=password.getText().toString();
+            if(h.isEmpty()||u.isEmpty()||p.isEmpty()){status.setText("Укажите IP и FTP доступ X7");return;}
+            preferences.edit().putString("host",h).putString("user",u).putString("password",p).apply();chooseX7Project(new TrimbleX7Client(h,u,p));
+        }).show();
+    }
+
+    private void chooseX7Project(TrimbleX7Client client){
+        setX7Running(true);status.setText("X7: получаем проекты…");worker.execute(()->{try{List<TrimbleX7Client.Project> projects=client.projects();if(projects.isEmpty())throw new IOException("на X7 нет проектов");String[] labels=new String[projects.size()];for(int i=0;i<labels.length;i++)labels[i]=projects.get(i).name;runOnUiThread(()->new AlertDialog.Builder(this).setTitle("Проект на Trimble X7").setItems(labels,(d,which)->runX7Scan(client,projects.get(which))).setOnCancelListener(d->setX7Running(false)).show());}catch(Exception error){finishX7Error(error);}});
+    }
+
+    private void runX7Scan(TrimbleX7Client client,TrimbleX7Client.Project scannerProject){
+        worker.execute(()->{try{
+            runOnUiThread(()->status.setText("X7: запускаем скан…"));
+            org.json.JSONObject configuration=client.configuration(scannerProject);TrimbleX7Client.Task task=client.start(configuration);
+            if(task.id<0)throw new IOException("X7 не вернул ID задачи");
+            long deadline=System.currentTimeMillis()+12*60_000L;
+            while(true){if(System.currentTimeMillis()>deadline)throw new IOException("превышено время ожидания скана");TrimbleX7Client.Task current=client.task(task.id);if(current.failed())throw new IOException("X7 сообщил ошибку сканирования");final int percent=Math.max(0,Math.min(100,current.percent));runOnUiThread(()->status.setText("X7: сканирование "+percent+"%"));if(current.complete()){task=current;break;}Thread.sleep(1_000);}
+            TrimbleX7Client.Scan scan=client.scan(scannerProject,task.scanId);client.markForDownload(scan);
+            File directory=new File(new File(new File(getFilesDir(),"projects"),project.id),"scans");if(!directory.exists()&&!directory.mkdirs())throw new IOException("не удалось создать папку проекта");
+            String filename=new File(scan.file).getName();if(!filename.toLowerCase(Locale.ROOT).endsWith(".tzf"))throw new IOException("X7 вернул недопустимое имя TZF");File destination=new File(directory,"x7-"+scan.id+"-"+filename);
+            client.download(scan,destination,(phase,percent)->runOnUiThread(()->status.setText("X7: "+phase+" "+percent+"%")));
+            runOnUiThread(()->{ProjectModel.Scan local=rememberScan(Uri.fromFile(destination),destination.getName());changed();tree.refresh();decodeScene(Uri.fromFile(destination),local);status.setText("X7: файл сохранён, открываем…");setX7Running(false);});
+        }catch(Exception error){finishX7Error(error);}});
+    }
+
+    private void finishX7Error(Exception error){runOnUiThread(()->{setX7Running(false);String message=error.getMessage();status.setText("X7: "+(message==null?"ошибка подключения":message));});}
+    private void setX7Running(boolean running){x7Running=running;if(scanX7Button!=null)scanX7Button.setEnabled(!running);}
+
     private void selectTzf(){Intent intent=new Intent(Intent.ACTION_OPEN_DOCUMENT);intent.setType("*/*");intent.addCategory(Intent.CATEGORY_OPENABLE);intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE,true);intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);startActivityForResult(intent,PICK_TZF);}
     @Override protected void onActivityResult(int request,int result,Intent data){super.onActivityResult(request,result,data);if(request!=PICK_TZF||result!=RESULT_OK||data==null)return;List<Uri> uris=new ArrayList<>();ClipData clip=data.getClipData();if(clip!=null)for(int i=0;i<clip.getItemCount();i++)uris.add(clip.getItemAt(i).getUri());else if(data.getData()!=null)uris.add(data.getData());int added=0;for(Uri uri:uris){String name=displayName(uri);if(!name.toLowerCase(Locale.ROOT).endsWith(".tzf")){status.setText("Пропущен не-TZF файл: "+name);continue;}try{getContentResolver().takePersistableUriPermission(uri,Intent.FLAG_GRANT_READ_URI_PERMISSION);}catch(SecurityException ignored){}ProjectModel.Scan scan=rememberScan(uri,name);if(scan.loadState!=ProjectModel.Scan.READY){decodeScene(uri,scan);added++;}}changed();tree.refresh();status.setText("Добавлено в очередь: "+added);}
 
@@ -124,7 +165,7 @@ public final class MainActivity extends Activity {
     private void decodeScene(Uri uri,ProjectModel.Scan scan){AtomicInteger counter=sceneGenerations.computeIfAbsent(scan.id,k->new AtomicInteger());int generation=counter.incrementAndGet();scan.loadState=ProjectModel.Scan.LOADING;scan.loadError="";tree.refresh();worker.execute(()->{try{File local=copyToCache(uri,"scene-"+scan.id+".tzf");if(project.findNode(scan.id)==null)return;localFiles.put(scan.id,local);NativePreviewSession old=sessions.remove(scan.id);if(old!=null)old.close();NativePreviewSession session=new NativePreviewSession(local.getAbsolutePath());sessions.put(scan.id,session);int quota=Math.max(20_000,effectiveBudget()/Math.max(1,project.scanCount()));session.prepare(quota);boolean first=true;int published=0;while(counter.get()==generation&&project.findNode(scan.id)!=null){float[] chunk=session.nextChunk(100_000);if(chunk.length==0)break;boolean reset=first;first=false;published+=chunk.length/3;float[] world=scan.worldTransform();runOnUiThread(()->{if(counter.get()==generation&&project.findNode(scan.id)!=null)cloud.appendSceneCloud(scan.id,chunk,world,scan.color,isEffectivelyVisible(scan),reset);});}if(project.findNode(scan.id)==null)return;int total=published;scan.sourcePointCount=Math.max(scan.sourcePointCount,total);scan.loadState=ProjectModel.Scan.READY;runOnUiThread(()->{if(counter.get()!=generation||project.findNode(scan.id)==null)return;tree.refresh();syncScene();status.setText(scan.name+": "+total+" точек");});}catch(Exception error){scan.loadState=ProjectModel.Scan.ERROR;scan.loadError=error.getMessage();runOnUiThread(()->{if(counter.get()==generation&&project.findNode(scan.id)!=null){tree.refresh();status.setText(scan.name+" недоступен: "+error.getMessage());}});}});}
     private void restoreProjectScans(){for(ProjectModel.Scan scan:allScans())if(scan.uri!=null&&!scan.uri.isEmpty())decodeScene(Uri.parse(scan.uri),scan);}
     private void reloadAll(){for(ProjectModel.Scan scan:allScans())if(scan.uri!=null&&!scan.uri.isEmpty())decodeScene(Uri.parse(scan.uri),scan);}
-    private File copyToCache(Uri uri,String name)throws IOException{File target=new File(getCacheDir(),name);try(InputStream input=getContentResolver().openInputStream(uri);FileOutputStream output=new FileOutputStream(target,false)){if(input==null)throw new IOException("нет доступа к выбранному файлу");byte[] buffer=new byte[1024*1024];int count;while((count=input.read(buffer))!=-1)output.write(buffer,0,count);}return target;}
+    private File copyToCache(Uri uri,String name)throws IOException{File target=new File(getCacheDir(),name);InputStream source="file".equals(uri.getScheme())?new java.io.FileInputStream(new File(uri.getPath())):getContentResolver().openInputStream(uri);try(InputStream input=source;FileOutputStream output=new FileOutputStream(target,false)){if(input==null)throw new IOException("нет доступа к выбранному файлу");byte[] buffer=new byte[1024*1024];int count;while((count=input.read(buffer))!=-1)output.write(buffer,0,count);}return target;}
 
     private void syncScene(){List<ProjectModel.Scan> scans=allScans();String[] live=new String[scans.size()];java.util.HashSet<String> keep=new java.util.HashSet<>();for(int i=0;i<scans.size();i++){ProjectModel.Scan scan=scans.get(i);live[i]=scan.id;keep.add(scan.id);cloud.setSceneCloudVisible(scan.id,isEffectivelyVisible(scan));cloud.setSceneCloudTransform(scan.id,scan.worldTransform());}for(String id:new ArrayList<>(sceneGenerations.keySet()))if(!keep.contains(id)){AtomicInteger generation=sceneGenerations.remove(id);if(generation!=null)generation.incrementAndGet();NativePreviewSession session=sessions.remove(id);if(session!=null)session.close();localFiles.remove(id);}cloud.retainSceneClouds(live);ProjectModel.Node moving=project.findNode(project.movingNodeId);cloud.setActiveSceneTarget(moving==null?null:moving.id,scanIds(moving),moving==null?null:moving.worldTransform());}
     private boolean isEffectivelyVisible(ProjectModel.Node node){for(ProjectModel.Node n=node;n!=null;n=n.parent())if(!n.visible)return false;return true;}
