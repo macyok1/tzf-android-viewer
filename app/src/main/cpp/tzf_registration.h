@@ -5,6 +5,7 @@
 #include <array>
 #include <atomic>
 #include <cstddef>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -16,6 +17,8 @@ struct RegistrationOptions {
     double rmsLimit{0.003};
     double p95Limit{0.008};
     double minimumOverlap{0.25};
+    double maximumInitialTranslationRatio{std::numeric_limits<double>::infinity()};
+    double maximumInitialYawDelta{std::numeric_limits<double>::infinity()};
     const std::atomic_bool* cancellation{};
 };
 
@@ -31,7 +34,7 @@ struct RegistrationResult {
 
 struct GlobalRegistrationOptions {
     RegistrationOptions refinement{};
-    double yawStepDegrees{30.0};
+    double yawStepDegrees{10.0};
     double ambiguityRatio{0.03};
 };
 

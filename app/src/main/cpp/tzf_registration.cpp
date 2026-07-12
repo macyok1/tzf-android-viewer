@@ -62,6 +62,8 @@ std::vector<Sample> normals(const std::vector<Vec3>& points,double radius){
 Vec3 center(const std::vector<Point>& points){Vec3 c{};for(auto p:points)c=add(c,toVec(p));return points.empty()?c:mul(c,1.0/points.size());}
 
 Vec3 transformPoint(Vec3 p,Vec3 pivot,const std::array<double,4>& t){double a=t[3]*3.14159265358979323846/180.0,c=std::cos(a),s=std::sin(a);p=sub(p,pivot);return {pivot.x+c*p.x-s*p.y+t[0],pivot.y+s*p.x+c*p.y+t[1],pivot.z+p.z+t[2]};}
+Vec3 rotateZ(Vec3 p,double degrees){const double a=degrees*3.14159265358979323846/180.0,c=std::cos(a),s=std::sin(a);return {c*p.x-s*p.y,s*p.x+c*p.y,p.z};}
+std::array<double,4> pivotTransform(Vec3 directTranslation,Vec3 pivot,double yaw){const Vec3 rotatedPivot=rotateZ(pivot,yaw);return {directTranslation.x-pivot.x+rotatedPivot.x,directTranslation.y-pivot.y+rotatedPivot.y,directTranslation.z,yaw};}
 
 bool solve4(double a[4][4],double b[4],double x[4]){
     for(int i=0;i<4;++i){int pivot=i;for(int r=i+1;r<4;++r)if(std::abs(a[r][i])>std::abs(a[pivot][i]))pivot=r;if(std::abs(a[pivot][i])<1e-10)return false;for(int c=i;c<4;++c)std::swap(a[i][c],a[pivot][c]);std::swap(b[i],b[pivot]);double d=a[i][i];for(int c=i;c<4;++c)a[i][c]/=d;b[i]/=d;for(int r=0;r<4;++r)if(r!=i){double f=a[r][i];for(int c=i;c<4;++c)a[r][c]-=f*a[i][c];b[r]-=f*b[i];}}
@@ -76,26 +78,47 @@ double spanOf(const std::vector<Point>& a,const std::vector<Point>& b){return st
 
 std::vector<Vec3> controlSample(const std::vector<Point>& points,std::size_t limit){std::vector<Vec3> result;if(points.empty())return result;const std::size_t stride=std::max<std::size_t>(1,(points.size()+limit-1)/limit);result.reserve(std::min(points.size(),limit));for(std::size_t i=0;i<points.size();i+=stride)result.push_back(toVec(points[i]));return result;}
 
+struct PoseVote { int count{}; Vec3 translation{}; };
+
+std::vector<std::array<double,4>> featureHypotheses(const std::vector<Point>& reference,const std::vector<Point>& moving,const GlobalRegistrationOptions& options){
+    const double span=spanOf(reference,moving),voxel=std::max(span/80.0,1e-3),cellSize=std::max(voxel*2.0,span/160.0);
+    const auto ref=downsample(reference,voxel),mov=downsample(moving,voxel);
+    if(ref.size()<30||mov.size()<30)return {};
+    const auto refFeatures=normals(ref,voxel*5.5),movFeatures=normals(mov,voxel*5.5);const Vec3 pivot=center(moving);
+    std::vector<std::array<double,4>> hypotheses;
+    const std::size_t refStride=std::max<std::size_t>(1,refFeatures.size()/300),movStride=std::max<std::size_t>(1,movFeatures.size()/300);
+    for(double yaw=-180.0;yaw<180.0;yaw+=options.yawStepDegrees){
+        if(options.refinement.cancellation&&options.refinement.cancellation->load())return {};
+        std::unordered_map<Cell,PoseVote,CellHash> votes;
+        for(std::size_t mi=0;mi<movFeatures.size();mi+=movStride){const auto& m=movFeatures[mi];if(!m.hasNormal)continue;const Vec3 rotatedPoint=rotateZ(m.point,yaw),rotatedNormal=rotateZ(m.normal,yaw);
+            for(std::size_t ri=0;ri<refFeatures.size();ri+=refStride){const auto& r=refFeatures[ri];if(!r.hasNormal||std::abs(dot(r.normal,rotatedNormal))<.82)continue;const Vec3 translation=sub(r.point,rotatedPoint);auto& vote=votes[cellFor(translation,cellSize)];++vote.count;vote.translation=add(vote.translation,translation);}
+        }
+        std::vector<std::pair<Cell,PoseVote>> best;best.reserve(votes.size());for(const auto& entry:votes)if(entry.second.count>=3)best.push_back(entry);std::sort(best.begin(),best.end(),[](const auto& a,const auto& b){return a.second.count>b.second.count;});
+        const std::size_t limit=std::min<std::size_t>(3,best.size());for(std::size_t i=0;i<limit;++i)hypotheses.push_back(pivotTransform(mul(best[i].second.translation,1.0/best[i].second.count),pivot,yaw));
+    }
+    return hypotheses;
+}
+
 } // namespace
 
 std::vector<Point> xyzToPoints(const std::vector<float>& xyz){std::vector<Point> out;out.reserve(xyz.size()/3);for(std::size_t i=0;i+2<xyz.size();i+=3)out.push_back({xyz[i],xyz[i+1],xyz[i+2]});return out;}
 
 RegistrationResult registerConstrained(const std::vector<Point>& reference,const std::vector<Point>& moving,const std::array<double,4>& initial,const RegistrationOptions& options){RegistrationResult result;result.transform=initial;if(reference.size()<100||moving.size()<100){result.reason="not enough points";return result;}const double span=spanOf(reference,moving);if(!std::isfinite(span)||span<=0){result.reason="invalid cloud bounds";return result;}const Vec3 pivot=center(moving);const std::array<double,3> voxels{span/24.0,span/48.0,span/96.0};
     for(double voxel:voxels){if(options.cancellation&&options.cancellation->load()){result.reason="cancelled";return result;}auto ref=downsample(reference,voxel),mov=downsample(moving,voxel);if(ref.size()<30||mov.size()<30){result.reason="not enough spatial coverage";return result;}auto samples=normals(ref,voxel*5.5);Index index(ref,voxel*2.5);const double maxDistance=voxel*3.0;
-        for(int iteration=0;iteration<options.iterationsPerLevel;++iteration){if(options.cancellation&&options.cancellation->load()){result.reason="cancelled";return result;}double normal[4][4]{},rhs[4]{};std::size_t used=0;double absSum=0;std::size_t sourceIndex=0;for(auto source:mov){if((++sourceIndex&4095U)==0&&options.cancellation&&options.cancellation->load()){result.reason="cancelled";return result;}Vec3 p=transformPoint(source,pivot,result.transform);std::size_t nearest{};double d2{};if(!index.nearest(p,maxDistance,nearest,d2)||!samples[nearest].hasNormal)continue;const Vec3 n=samples[nearest].normal;double residual=dot(sub(p,samples[nearest].point),n);double huber=voxel;double weight=std::abs(residual)<=huber?1.0:huber/std::abs(residual);Vec3 relative=sub(p,{pivot.x+result.transform[0],pivot.y+result.transform[1],pivot.z+result.transform[2]});double j[4]{n.x,n.y,n.z,(-relative.y*n.x+relative.x*n.y)};for(int r=0;r<4;++r){rhs[r]+=-weight*j[r]*residual;for(int c=0;c<4;++c)normal[r][c]+=weight*j[r]*j[c];}absSum+=std::abs(residual);++used;}if(used<30||static_cast<double>(used)/mov.size()<options.minimumOverlap){result.reason="insufficient overlap";return result;}double delta[4]{};if(!solve4(normal,rhs,delta)){result.reason="degenerate geometry";return result;}result.transform[0]+=delta[0];result.transform[1]+=delta[1];result.transform[2]+=delta[2];result.transform[3]+=delta[3]*180.0/3.14159265358979323846;++result.iterations;if(std::sqrt(delta[0]*delta[0]+delta[1]*delta[1]+delta[2]*delta[2])<voxel*1e-4&&std::abs(delta[3])<1e-5)break;if(!std::isfinite(absSum)){result.reason="registration diverged";return result;}}
+        for(int iteration=0;iteration<options.iterationsPerLevel;++iteration){if(options.cancellation&&options.cancellation->load()){result.reason="cancelled";return result;}double normal[4][4]{},rhs[4]{};std::size_t used=0;double absSum=0;std::size_t sourceIndex=0;for(auto source:mov){if((++sourceIndex&4095U)==0&&options.cancellation&&options.cancellation->load()){result.reason="cancelled";return result;}Vec3 p=transformPoint(source,pivot,result.transform);std::size_t nearest{};double d2{};if(!index.nearest(p,maxDistance,nearest,d2)||!samples[nearest].hasNormal)continue;const Vec3 n=samples[nearest].normal;double residual=dot(sub(p,samples[nearest].point),n);double huber=voxel;double weight=std::abs(residual)<=huber?1.0:huber/std::abs(residual);Vec3 relative=sub(p,{pivot.x+result.transform[0],pivot.y+result.transform[1],pivot.z+result.transform[2]});double j[4]{n.x,n.y,n.z,(-relative.y*n.x+relative.x*n.y)};for(int r=0;r<4;++r){rhs[r]+=-weight*j[r]*residual;for(int c=0;c<4;++c)normal[r][c]+=weight*j[r]*j[c];}absSum+=std::abs(residual);++used;}if(used<30||static_cast<double>(used)/mov.size()<options.minimumOverlap){result.reason="insufficient overlap";return result;}double delta[4]{};if(!solve4(normal,rhs,delta)){result.reason="degenerate geometry";return result;}result.transform[0]+=delta[0];result.transform[1]+=delta[1];result.transform[2]+=delta[2];result.transform[3]+=delta[3]*180.0/3.14159265358979323846;if(std::isfinite(options.maximumInitialTranslationRatio)){const double dx=result.transform[0]-initial[0],dy=result.transform[1]-initial[1],dz=result.transform[2]-initial[2];if(std::sqrt(dx*dx+dy*dy+dz*dz)>span*options.maximumInitialTranslationRatio){result.reason="local refinement moved too far";return result;}}if(std::isfinite(options.maximumInitialYawDelta)&&std::abs(std::remainder(result.transform[3]-initial[3],360.0))>options.maximumInitialYawDelta){result.reason="local refinement rotated too far";return result;}++result.iterations;if(std::sqrt(delta[0]*delta[0]+delta[1]*delta[1]+delta[2]*delta[2])<voxel*1e-4&&std::abs(delta[3])<1e-5)break;if(!std::isfinite(absSum)){result.reason="registration diverged";return result;}}
     }
     auto controlRef=controlSample(reference,120000),controlMov=controlSample(moving,120000);auto m=metrics(controlRef,controlMov,pivot,result.transform,std::max(options.p95Limit*4.0,span/100.0));result.rms=m.rms;result.p95=m.p95;result.overlap=m.overlap;if(m.overlap<options.minimumOverlap)result.reason="insufficient validation overlap";else{result.accepted=true;if(m.rms>options.rmsLimit)result.reason="quality warning: RMS exceeds threshold";else if(m.p95>options.p95Limit)result.reason="quality warning: P95 exceeds threshold";else result.reason="accepted";}return result;}
 
 RegistrationResult registerGlobalConstrained(const std::vector<Point>& reference,const std::vector<Point>& moving,const GlobalRegistrationOptions& options){
     RegistrationResult rejected;if(reference.size()<100||moving.size()<100){rejected.reason="not enough points";return rejected;}
     if(!std::isfinite(options.yawStepDegrees)||options.yawStepDegrees<5.0||options.yawStepDegrees>90.0){rejected.reason="invalid yaw step";return rejected;}
-    const Vec3 referenceCenter=center(reference),movingCenter=center(moving);
-    const std::array<double,3> translation{referenceCenter.x-movingCenter.x,referenceCenter.y-movingCenter.y,referenceCenter.z-movingCenter.z};
     const double distinctTranslation=std::max(spanOf(reference,moving)/100.0,options.refinement.p95Limit*2.0);
     RegistrationResult best,second;double bestScore=std::numeric_limits<double>::infinity(),secondScore=bestScore;
-    for(double yaw=-180.0;yaw<180.0;yaw+=options.yawStepDegrees){
+    auto hypotheses=featureHypotheses(reference,moving,options);
+    if(hypotheses.empty()){const Vec3 referenceCenter=center(reference),movingCenter=center(moving),translation=sub(referenceCenter,movingCenter);for(double yaw=-180.0;yaw<180.0;yaw+=options.yawStepDegrees)hypotheses.push_back(pivotTransform(translation,movingCenter,yaw));}
+    for(const auto& initial:hypotheses){
         if(options.refinement.cancellation&&options.refinement.cancellation->load()){rejected.reason="cancelled";return rejected;}
-        auto candidate=registerConstrained(reference,moving,{translation[0],translation[1],translation[2],yaw},options.refinement);
+        auto candidate=registerConstrained(reference,moving,initial,options.refinement);
         if(!candidate.accepted)continue;
         const double score=candidate.rms+candidate.p95+(1.0-candidate.overlap)*options.refinement.p95Limit;
         if(best.accepted){double dx=candidate.transform[0]-best.transform[0],dy=candidate.transform[1]-best.transform[1],dz=candidate.transform[2]-best.transform[2];double da=std::remainder(candidate.transform[3]-best.transform[3],360.0);if(std::sqrt(dx*dx+dy*dy+dz*dz)<distinctTranslation&&std::abs(da)<1.0){if(score<bestScore){best=candidate;bestScore=score;}continue;}}

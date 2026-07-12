@@ -200,7 +200,7 @@ Java_ru_tzfviewer_TzfNative_registerPointClouds(JNIEnv* env, jclass,
         if (env->ExceptionCheck()) return nullptr;
         std::array<double,4> initial{}; std::copy(initialFloats.begin(),initialFloats.end(),initial.begin());
         registrationCancelled.store(false);
-        tzf::RegistrationOptions options; options.rmsLimit=rmsLimit; options.p95Limit=p95Limit;options.cancellation=&registrationCancelled;
+        tzf::RegistrationOptions options; options.rmsLimit=rmsLimit; options.p95Limit=p95Limit;options.maximumInitialTranslationRatio=.25;options.maximumInitialYawDelta=15.0;options.cancellation=&registrationCancelled;
         const auto result=tzf::registerConstrained(tzf::xyzToPoints(reference),tzf::xyzToPoints(moving),initial,options);
         const auto resultClass=env->FindClass("ru/tzfviewer/RegistrationResult"); if(resultClass==nullptr)return nullptr;
         const auto constructor=env->GetMethodID(resultClass,"<init>","(ZDDDILjava/lang/String;[F)V"); if(constructor==nullptr)return nullptr;

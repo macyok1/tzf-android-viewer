@@ -168,6 +168,15 @@ int main() {
     assert(warning.accepted);
     assert(warning.reason.starts_with("quality warning:"));
 
+    auto guardedOptions = registrationOptions;
+    guardedOptions.maximumInitialTranslationRatio = 0.001;
+    guardedOptions.maximumInitialYawDelta = 1.0;
+    const auto guarded = tzf::registerConstrained(
+        reference, moving, {0.0, 0.0, 0.0, 0.0}, guardedOptions);
+    assert(!guarded.accepted);
+    assert(guarded.reason == "local refinement moved too far" ||
+           guarded.reason == "local refinement rotated too far");
+
     const auto rejected = tzf::registerConstrained(
         std::vector<tzf::Point>(20), std::vector<tzf::Point>(20), {});
     assert(!rejected.accepted);
