@@ -1,5 +1,6 @@
 #include "tzf_core.h"
 #include "tzf_registration.h"
+#include "tzf_pose_graph.h"
 
 #include <jni.h>
 
@@ -241,3 +242,9 @@ Java_ru_tzfviewer_TzfNative_registerPointCloudsGlobal(JNIEnv* env, jclass,
 
 extern "C" JNIEXPORT void JNICALL
 Java_ru_tzfviewer_TzfNative_cancelRegistration(JNIEnv*,jclass){registrationCancelled.store(true);}
+
+extern "C" JNIEXPORT jfloatArray JNICALL
+Java_ru_tzfviewer_TzfNative_optimizePoseGraph(JNIEnv* env,jclass,jfloatArray initialPoses,jfloatArray encodedEdges,jint fixedStation){
+    if(initialPoses==nullptr||encodedEdges==nullptr||env->GetArrayLength(initialPoses)%4!=0||env->GetArrayLength(encodedEdges)%7!=0){throwIOException(env,"invalid pose graph arrays");return nullptr;}
+    try{std::vector<float> posesRaw((std::size_t)env->GetArrayLength(initialPoses)),edgesRaw((std::size_t)env->GetArrayLength(encodedEdges));env->GetFloatArrayRegion(initialPoses,0,(jsize)posesRaw.size(),posesRaw.data());env->GetFloatArrayRegion(encodedEdges,0,(jsize)edgesRaw.size(),edgesRaw.data());if(env->ExceptionCheck())return nullptr;std::vector<std::array<double,4>> poses(posesRaw.size()/4);for(std::size_t i=0;i<poses.size();++i)for(int j=0;j<4;++j)poses[i][j]=posesRaw[i*4+j];std::vector<tzf::PoseGraphEdge> edges;edges.reserve(edgesRaw.size()/7);for(std::size_t i=0;i<edgesRaw.size();i+=7){tzf::PoseGraphEdge edge;edge.reference=(std::size_t)edgesRaw[i];edge.moving=(std::size_t)edgesRaw[i+1];for(int j=0;j<4;++j)edge.relative[j]=edgesRaw[i+2+j];edge.weight=edgesRaw[i+6];edges.push_back(edge);}tzf::PoseGraphOptions options;options.cancellation=&registrationCancelled;registrationCancelled.store(false);auto result=tzf::optimizePoseGraph(poses.size(),(std::size_t)fixedStation,poses,edges,options);if(!result.accepted){throwIOException(env,result.reason.c_str());return nullptr;}std::vector<float> flattened(result.poses.size()*4);for(std::size_t i=0;i<result.poses.size();++i)for(int j=0;j<4;++j)flattened[i*4+j]=(float)result.poses[i][j];jfloatArray output=env->NewFloatArray((jsize)flattened.size());if(output!=nullptr)env->SetFloatArrayRegion(output,0,(jsize)flattened.size(),flattened.data());return output;}catch(const std::exception& error){throwIOException(env,error.what());return nullptr;}
+}
