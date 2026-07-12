@@ -20,7 +20,7 @@ public final class ProjectsActivity extends Activity {
     private ProjectStore store;
     private LinearLayout list;
 
-    @Override public void onCreate(Bundle state){super.onCreate(state);setContentView(R.layout.activity_projects);store=new ProjectStore(getFilesDir());list=findViewById(R.id.projectList);findViewById(R.id.newProject).setOnClickListener(v->promptNew());}
+    @Override public void onCreate(Bundle state){super.onCreate(state);setContentView(R.layout.activity_projects);store=new ProjectStore(getFilesDir());list=findViewById(R.id.projectList);findViewById(R.id.newProject).setOnClickListener(v->promptNew());findViewById(R.id.appSettings).setOnClickListener(v->startActivity(new Intent(this,SettingsActivity.class)));}
     @Override protected void onResume(){super.onResume();refresh();}
 
     private void refresh(){

@@ -1,7 +1,6 @@
 package ru.tzfviewer;
 
 import android.app.Activity;
-import android.app.AlertDialog;
 import android.content.ClipData;
 import android.content.Intent;
 import android.net.Uri;
@@ -49,9 +48,6 @@ public final class MainActivity extends Activity {
     private Button registerButton,cancelButton,pointSizeButton,budgetButton;
     private ProgressBar registrationProgress;
     private View scanPanel,settingsPanel;
-    private Button updateButton;
-    private AppUpdater updater;
-    private File pendingUpdate;
     private int budgetIndex,pointSizeIndex;
 
     @Override public void onCreate(Bundle state){
@@ -61,7 +57,7 @@ public final class MainActivity extends Activity {
         setContentView(R.layout.activity_main);
         cloud=new PointCloudView(this);
         ((FrameLayout)findViewById(R.id.viewportContainer)).addView(cloud,0,new FrameLayout.LayoutParams(-1,-1));
-        bindViews();bindCamera();bindTools();bindTree();bindUpdater();
+        bindViews();bindCamera();bindTools();bindTree();
         cloud.setTransformListener(this::applyMovingWorldTransform);
         cloud.setPointSize(project.pointSize);cloud.setGridVisible(project.gridVisible);cloud.restoreOrientation(project.cameraYaw,project.cameraPitch);if(project.orthographic)cloud.toggleProjection();
         updateRoleUi();syncScene();restoreProjectScans();sizeOverlays();
@@ -71,7 +67,7 @@ public final class MainActivity extends Activity {
         ((TextView)findViewById(R.id.projectTitle)).setText(project.name);
         status=findViewById(R.id.status);referenceLabel=findViewById(R.id.referenceLabel);movingLabel=findViewById(R.id.movingLabel);transformSummary=findViewById(R.id.transformSummary);
         rmsLimit=findViewById(R.id.rmsLimit);p95Limit=findViewById(R.id.p95Limit);registerButton=findViewById(R.id.registerScans);cancelButton=findViewById(R.id.cancelRegistration);registrationProgress=findViewById(R.id.registrationProgress);
-        scanPanel=findViewById(R.id.scanPanel);settingsPanel=findViewById(R.id.settingsPanel);tree=findViewById(R.id.scanTree);pointSizeButton=findViewById(R.id.pointSize);budgetButton=findViewById(R.id.pointBudget);updateButton=findViewById(R.id.updateApp);
+        scanPanel=findViewById(R.id.scanPanel);settingsPanel=findViewById(R.id.settingsPanel);tree=findViewById(R.id.scanTree);pointSizeButton=findViewById(R.id.pointSize);budgetButton=findViewById(R.id.pointBudget);
     }
 
     private void bindCamera(){
@@ -81,6 +77,7 @@ public final class MainActivity extends Activity {
 
     private void bindTools(){
         findViewById(R.id.compactOpen).setOnClickListener(v->selectTzf());
+        findViewById(R.id.backToProjects).setOnClickListener(v->navigateToProjects());
         findViewById(R.id.compactFit).setOnClickListener(v->{if(readyScans().isEmpty())status.setText("Нет видимых готовых облаков");else cloud.fitView();});
         findViewById(R.id.scans).setOnClickListener(v->togglePanel(scanPanel,settingsPanel));findViewById(R.id.closeScans).setOnClickListener(v->scanPanel.setVisibility(View.GONE));
         findViewById(R.id.moreTools).setOnClickListener(v->togglePanel(settingsPanel,scanPanel));findViewById(R.id.closeSettings).setOnClickListener(v->settingsPanel.setVisibility(View.GONE));
@@ -97,8 +94,6 @@ public final class MainActivity extends Activity {
     }
 
     private void bindTree(){tree.bind(project,new ScanTreePanel.Listener(){public void changed(){MainActivity.this.changed();syncScene();updateRoleUi();}public void visibilityChanged(ProjectModel.Node node){syncScene();}public void rolesChanged(){updateRoleUi();syncScene();}});}
-    private void bindUpdater(){updater=new AppUpdater(this,new AppUpdater.Listener(){public void status(String text){updateButton.setEnabled(true);updateButton.setText("Обновить");MainActivity.this.status.setText(text);}public void available(UpdateInfo info){updateButton.setEnabled(true);updateButton.setText("Скачать "+info.versionName);new AlertDialog.Builder(MainActivity.this).setTitle("Доступно обновление "+info.versionName).setMessage("APK будет загружен с GitHub и проверен по SHA-256.").setNegativeButton("Позже",null).setPositiveButton("Скачать",(d,w)->{updateButton.setEnabled(false);updater.download(info);}).show();}public void progress(int percent){updateButton.setText(percent<0?"Загрузка…":percent+"%");}public void ready(File apk,UpdateInfo info){pendingUpdate=apk;updateButton.setEnabled(true);updateButton.setText("Установить "+info.versionName);status.setText("Обновление проверено и готово к установке");installPendingUpdate();}public void error(String message){updateButton.setEnabled(true);updateButton.setText("Повторить");status.setText("Ошибка обновления: "+message);}});updateButton.setOnClickListener(v->{if(pendingUpdate!=null&&pendingUpdate.isFile())installPendingUpdate();else{updateButton.setEnabled(false);updater.check();}});}
-    private void installPendingUpdate(){if(pendingUpdate==null||!pendingUpdate.isFile())return;if(!AppUpdater.install(this,pendingUpdate)){status.setText("Разрешите установку из TZF Viewer, вернитесь и нажмите «Установить»");updateButton.setText("Установить");}}
     private void sizeOverlays(){findViewById(R.id.viewportContainer).post(()->{int max=Math.round(findViewById(R.id.viewportContainer).getHeight()*.35f),cap=dp(220),height=Math.min(cap,max);scanPanel.getLayoutParams().height=height;settingsPanel.getLayoutParams().height=height;scanPanel.requestLayout();settingsPanel.requestLayout();});}
     private void togglePanel(View show,View hide){hide.setVisibility(View.GONE);show.setVisibility(show.getVisibility()==View.VISIBLE?View.GONE:View.VISIBLE);}
 
@@ -146,7 +141,9 @@ public final class MainActivity extends Activity {
     private String budgetLabel(int budget){if(budget<0)return "AUTO";if(budget>=1_000_000)return String.format(Locale.US,"%.1fM",budget/1_000_000f);return budget/1000+"k";}
     private int dp(int value){return Math.round(value*getResources().getDisplayMetrics().density);}
     private void changed(){project.touch(System.currentTimeMillis());try{store.save(project);}catch(IOException error){status.setText("Не удалось сохранить проект: "+error.getMessage());}}
+    private void navigateToProjects(){changed();finish();}
+    @Override public void onBackPressed(){if(scanPanel.getVisibility()==View.VISIBLE||settingsPanel.getVisibility()==View.VISIBLE){scanPanel.setVisibility(View.GONE);settingsPanel.setVisibility(View.GONE);return;}navigateToProjects();}
     @Override protected void onPause(){changed();cloud.onPause();super.onPause();}
     @Override protected void onResume(){super.onResume();if(cloud!=null)cloud.onResume();}
-    @Override protected void onDestroy(){registrationGeneration.incrementAndGet();for(AtomicInteger generation:sceneGenerations.values())generation.incrementAndGet();for(NativePreviewSession session:sessions.values())session.close();sessions.clear();worker.shutdownNow();if(updater!=null)updater.close();super.onDestroy();}
+    @Override protected void onDestroy(){registrationGeneration.incrementAndGet();for(AtomicInteger generation:sceneGenerations.values())generation.incrementAndGet();for(NativePreviewSession session:sessions.values())session.close();sessions.clear();worker.shutdownNow();super.onDestroy();}
 }
