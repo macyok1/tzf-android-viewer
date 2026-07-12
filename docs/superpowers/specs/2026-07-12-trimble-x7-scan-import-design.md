@@ -45,6 +45,10 @@ byte progress, and opening. A failure leaves the local project unchanged and
 shows an actionable error. A successful import creates a local scan node and
 opens it immediately.
 
+The `X7` button is a connection action only. After a successful connection it
+opens a dedicated X7 action menu: `New scan`, `Download scan`, and
+`Disconnect`. Project selection happens only after the user chooses an action.
+
 ## Error handling
 
 The flow must stop safely on: no Wi-Fi route to X7, API timeout/non-success
