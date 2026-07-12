@@ -22,7 +22,11 @@
         <Button android:id="@+id/compactFit" style="@style/CompactTool" android:layout_width="44dp" android:layout_height="44dp" android:text="⌂" android:contentDescription="Показать всё"/>
         <Button android:id="@+id/scans" style="@style/CompactTool" android:layout_width="44dp" android:layout_height="44dp" android:text="R/M" android:textSize="10sp" android:contentDescription="Сканы и связки"/>
         <Button android:id="@+id/measure" style="@style/CompactTool" android:layout_width="44dp" android:layout_height="44dp" android:text="◎" android:contentDescription="Измерение"/>
-        <Button android:id="@+id/moreTools" style="@style/CompactTool" android:layout_width="44dp" android:layout_height="44dp" android:text="⋯" android:contentDescription="Параметры"/>
+        <Button android:id="@+id/compactProjection" style="@style/CompactTool" android:layout_width="44dp" android:layout_height="44dp" android:text="P" android:textSize="11sp" android:contentDescription="Режим проекции"/>
+        <Button android:id="@+id/grid" style="@style/CompactTool" android:layout_width="44dp" android:layout_height="44dp" android:text="▦" android:contentDescription="Сетка"/>
+        <Button android:id="@+id/pointSize" style="@style/CompactTool" android:layout_width="44dp" android:layout_height="44dp" android:text="•• 2" android:textSize="10sp" android:contentDescription="Размер точек"/>
+        <Button android:id="@+id/pointBudget" style="@style/CompactTool" android:layout_width="44dp" android:layout_height="44dp" android:text="150k" android:textSize="10sp" android:contentDescription="Количество точек"/>
+        <Button android:id="@+id/moreTools" style="@style/CompactTool" android:layout_width="44dp" android:layout_height="44dp" android:text="⋯" android:contentDescription="Меню сшивки"/>
     </LinearLayout>
 
     <ru.tzfviewer.OrientationCubeView android:id="@+id/orientation" android:layout_width="96dp" android:layout_height="96dp"
@@ -40,9 +44,7 @@
             android:gravity="center_vertical" android:maxLines="1" android:ellipsize="end" android:paddingHorizontal="6dp" android:text="R  не выбран" android:textColor="@color/cyan" />
         <TextView android:id="@+id/movingLabel" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1"
             android:gravity="center_vertical" android:maxLines="1" android:ellipsize="end" android:paddingHorizontal="6dp" android:text="M  не выбран" android:textColor="@color/amber" />
-        <Button android:id="@+id/registerScans" style="@style/ToolButton" android:layout_width="82dp" android:layout_height="48dp" android:text="Быстро" />
-        <Button android:id="@+id/deepRegistration" style="@style/ToolButton" android:layout_width="82dp" android:layout_height="48dp" android:text="Глубоко" />
-        <Button android:id="@+id/pairDetails" style="@style/CompactTool" android:layout_width="44dp" android:layout_height="48dp" android:text="⌃" android:contentDescription="Параметры сшивки" />
+        <Button android:id="@+id/pairDetails" style="@style/CompactTool" android:layout_width="44dp" android:layout_height="48dp" android:text="M" android:textSize="12sp" android:contentDescription="Преобразование M" />
         <ProgressBar android:id="@+id/registrationProgress" style="?android:attr/progressBarStyleHorizontal" android:layout_width="72dp" android:layout_height="5dp" android:indeterminate="false" android:max="100" android:visibility="gone" />
         <Button android:id="@+id/cancelRegistration" style="@style/ToolButton" android:layout_width="82dp" android:layout_height="48dp" android:text="Отмена" android:visibility="gone" />
         <Button android:id="@+id/applyCandidate" style="@style/ToolButton" android:layout_width="96dp" android:layout_height="48dp" android:text="Применить" android:visibility="gone" />
@@ -65,24 +67,14 @@
         android:layout_gravity="bottom" android:layout_marginBottom="70dp" android:orientation="vertical" android:padding="8dp"
         android:background="@color/panel" android:visibility="gone" android:elevation="12dp">
         <LinearLayout android:layout_width="match_parent" android:layout_height="36dp" android:gravity="center_vertical">
-            <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="center_vertical" android:text="ПАРАМЕТРЫ СШИВКИ" android:textColor="@color/text_primary" android:textStyle="bold" />
+            <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="center_vertical" android:text="ПРЕОБРАЗОВАНИЕ M" android:textColor="@color/text_primary" android:textStyle="bold" />
             <Button android:id="@+id/closeSettings" style="@style/CompactTool" android:layout_width="36dp" android:layout_height="36dp" android:text="⌄" />
         </LinearLayout>
         <TextView android:id="@+id/transformSummary" android:layout_width="match_parent" android:layout_height="32dp" android:gravity="center_vertical" android:textColor="@color/amber" android:fontFamily="monospace" />
         <LinearLayout android:layout_width="match_parent" android:layout_height="44dp">
-            <EditText android:id="@+id/rmsLimit" style="@style/AxisInput" android:layout_width="0dp" android:layout_height="44dp" android:layout_weight="1" android:hint="RMS, ед." android:text="3.0" />
-            <EditText android:id="@+id/p95Limit" style="@style/AxisInput" android:layout_width="0dp" android:layout_height="44dp" android:layout_weight="1" android:hint="P95, ед." android:text="8.0" />
-        </LinearLayout>
-        <LinearLayout android:layout_width="match_parent" android:layout_height="44dp">
             <Button android:id="@+id/resetTransform" style="@style/ToolButton" android:layout_width="0dp" android:layout_height="44dp" android:layout_weight="1" android:text="Сброс" />
             <Button android:id="@+id/saveTransform" style="@style/ToolButton" android:layout_width="0dp" android:layout_height="44dp" android:layout_weight="1" android:text="Сохранить" />
             <Button android:id="@+id/restoreTransform" style="@style/ToolButton" android:layout_width="0dp" android:layout_height="44dp" android:layout_weight="1" android:text="Вернуть" />
-        </LinearLayout>
-        <LinearLayout android:layout_width="match_parent" android:layout_height="44dp">
-            <Button android:id="@+id/compactProjection" style="@style/ToolButton" android:layout_width="0dp" android:layout_height="44dp" android:layout_weight="1" android:text="Проекция" />
-            <Button android:id="@+id/grid" style="@style/ToolButton" android:layout_width="0dp" android:layout_height="44dp" android:layout_weight="1" android:text="Сетка" />
-            <Button android:id="@+id/pointSize" style="@style/ToolButton" android:layout_width="0dp" android:layout_height="44dp" android:layout_weight="1" android:text="•• 2" />
-            <Button android:id="@+id/pointBudget" style="@style/ToolButton" android:layout_width="0dp" android:layout_height="44dp" android:layout_weight="1" android:text="150k" />
         </LinearLayout>
     </LinearLayout>
 </FrameLayout>
