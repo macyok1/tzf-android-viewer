@@ -49,6 +49,12 @@ The `X7` button is a connection action only. After a successful connection it
 opens a dedicated X7 action menu: `New scan`, `Download scan`, and
 `Disconnect`. Project selection happens only after the user chooses an action.
 
+The X7 connection uses the X7 access-point address and FTP account confirmed
+for this deployment, without a credentials dialog. `Download scan` supports a
+multi-selection list and an `Add all` action. The user can choose a persistent
+storage tree through the Android system picker; each downloaded TZF is written
+to a project-named folder below that tree and is added to the local project.
+
 The action menu also offers `Preview scan`. It downloads one selected completed
 TZF into cache and opens an isolated viewer session at the maximum point
 budget. Preview never adds a scan to the local project; closing the preview
