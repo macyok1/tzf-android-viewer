@@ -19,7 +19,7 @@ import java.util.Set;
 
 public final class PointCloudView extends GLSurfaceView {
     interface PerformanceListener { void onFrameRate(float fps); }
-    private PerformanceListener performanceListener;
+    private static volatile PerformanceListener performanceListener;
     void setPerformanceListener(PerformanceListener listener){performanceListener=listener;}
     interface MeasureListener { void onMeasure(float length,float deltaZ); }
     interface TransformListener { void onTransform(String targetNodeId,float[] values); }
@@ -55,6 +55,10 @@ public final class PointCloudView extends GLSurfaceView {
     void fitView(){queueEvent(renderer::fitVisible);requestRender();}
     void setPointSize(float size){queueEvent(()->renderer.pointSize=Math.max(1f,Math.min(5f,size)));requestRender();}
     void setGridVisible(boolean visible){queueEvent(()->renderer.gridVisible=visible);requestRender();}
+    void setClipBounds(float[] lower,float[] upper,boolean enabled){float[] lo=lower.clone(),hi=upper.clone();queueEvent(()->renderer.setClip(lo,hi,enabled));requestRender();}
+    void enableDefaultClip(boolean enabled){queueEvent(()->renderer.enableDefaultClip(enabled));requestRender();}
+    void setZClipFractions(float lower,float upper){queueEvent(()->renderer.setZFractions(lower,upper));requestRender();}
+    void setClipControlsVisible(boolean visible){queueEvent(()->renderer.clipControlsVisible=visible);requestRender();}
     void setPreset(float yaw,float pitch){
         cancelCameraAnimation();
         final float startYaw=uiYaw,startPitch=uiPitch;
@@ -88,8 +92,8 @@ public final class PointCloudView extends GLSurfaceView {
     }
 
     private static final class CloudRenderer implements GLSurfaceView.Renderer {
-        private static final String VS="uniform mat4 uMvp;uniform float uSize;attribute vec3 aPosition;void main(){gl_Position=uMvp*vec4(aPosition,1.0);gl_PointSize=uSize;}";
-        private static final String FS="precision mediump float;uniform vec4 uColor;void main(){gl_FragColor=uColor;}";
+        private static final String VS="uniform mat4 uMvp;uniform mat4 uWorld;uniform float uSize;attribute vec3 aPosition;varying vec3 vWorld;void main(){vWorld=(uWorld*vec4(aPosition,1.0)).xyz;gl_Position=uMvp*vec4(aPosition,1.0);gl_PointSize=uSize;}";
+        private static final String FS="precision mediump float;uniform vec4 uColor;uniform vec3 uClipMin;uniform vec3 uClipMax;uniform float uClip;varying vec3 vWorld;void main(){if(uClip>.5&&(any(lessThan(vWorld,uClipMin))||any(greaterThan(vWorld,uClipMax))))discard;gl_FragColor=uColor;}";
         private final float[] projection=new float[16],view=new float[16],commonModel=new float[16],primaryMv=new float[16],primaryMvp=new float[16],inversePrimaryMvp=new float[16];
         private final float[] local=new float[16],gridMvp=new float[16];
         private final float[] transform=new float[4],projectIn=new float[4],projectOut=new float[4],gizmoPivot=new float[3];
@@ -100,7 +104,8 @@ public final class PointCloudView extends GLSurfaceView {
         private final Map<String,SceneCloud> sceneClouds=new LinkedHashMap<>();
         private final Set<String> activeSceneIds=new HashSet<>();
         private String activeTargetNodeId;
-        private int gridCount,width,height,program,position,matrix,color,size;
+        private int gridCount,width,height,program,position,matrix,color,size,world,clipMin,clipMax,clip;
+        private final float[] clipLower=new float[3],clipUpper=new float[3],identity=new float[16],sceneFrame=new float[6];private boolean clipping,clipControlsVisible=true;
         private float cx,cy,cz,span=1f,panX,panY,panZ;
         private boolean inverseMvpValid,frameLockedForGizmo;
         private long fpsStarted; private int fpsFrames;
@@ -109,6 +114,9 @@ public final class PointCloudView extends GLSurfaceView {
 
         static FloatBuffer direct(int floats){return ByteBuffer.allocateDirect(floats*4).order(ByteOrder.nativeOrder()).asFloatBuffer();}
         void setSceneCloud(String id,float[] xyz,float[] pose,int argb,boolean visible){appendSceneCloud(id,xyz,pose,argb,visible,true);}
+        void setClip(float[] lower,float[] upper,boolean enabled){System.arraycopy(lower,0,clipLower,0,3);System.arraycopy(upper,0,clipUpper,0,3);clipping=enabled;}
+        void enableDefaultClip(boolean enabled){if(enabled){for(int i=0;i<3;i++){float center=(sceneFrame[i]+sceneFrame[i+3])*.5f,half=(sceneFrame[i+3]-sceneFrame[i])*.35f;clipLower[i]=center-half;clipUpper[i]=center+half;}clipControlsVisible=true;}clipping=enabled;}
+        void setZFractions(float lower,float upper){float min=sceneFrame[2],range=Math.max(.001f,sceneFrame[5]-min);clipLower[2]=min+range*Math.max(0,Math.min(1,lower));clipUpper[2]=min+range*Math.max(0,Math.min(1,upper));clipping=true;}
         void appendSceneCloud(String id,float[] xyz,float[] pose,int argb,boolean visible,boolean reset){SceneCloud c=sceneClouds.get(id);if(c==null){c=new SceneCloud();sceneClouds.put(id,c);}if(reset){c.chunks.clear();c.localBounds=null;}FloatBuffer buffer=direct(xyz.length);buffer.put(xyz).position(0);c.chunks.add(buffer);c.localBounds=SceneBounds.merge(c.localBounds,SceneBounds.of(xyz));System.arraycopy(pose,0,c.pose,0,Math.min(4,pose.length));c.r=((argb>>16)&255)/255f;c.g=((argb>>8)&255)/255f;c.b=(argb&255)/255f;c.visible=visible;updateSceneFrame();}
         void setSceneCloudVisible(String id,boolean visible){SceneCloud c=sceneClouds.get(id);if(c!=null){c.visible=visible;updateSceneFrame();}}
         void setSceneCloudTransform(String id,float[] pose){SceneCloud c=sceneClouds.get(id);if(c!=null){System.arraycopy(pose,0,c.pose,0,Math.min(4,pose.length));if(frameLockedForGizmo)updateActivePivot();else updateSceneFrame();}}
@@ -116,28 +124,31 @@ public final class PointCloudView extends GLSurfaceView {
         void removeSceneCloud(String id){sceneClouds.remove(id);updateSceneFrame();}
         void retainSceneClouds(String[] ids){Set<String> keep=new HashSet<>();java.util.Collections.addAll(keep,ids);sceneClouds.keySet().retainAll(keep);activeSceneIds.retainAll(keep);updateSceneFrame();}
         static float[] bounds(float[] a){return SceneBounds.of(a);}
-        void updateSceneFrame(){float[] frame=null;for(SceneCloud c:sceneClouds.values())if(c.visible&&c.localBounds!=null)frame=SceneBounds.merge(frame,SceneBounds.transformed(c.localBounds,c.pose));if(frame==null)return;cx=(frame[0]+frame[3])*.5f;cy=(frame[1]+frame[4])*.5f;cz=(frame[2]+frame[5])*.5f;span=Math.max(1f,Math.max(frame[3]-frame[0],Math.max(frame[4]-frame[1],frame[5]-frame[2])));buildGrid();updateActivePivot();}
+        void updateSceneFrame(){float[] frame=null;for(SceneCloud c:sceneClouds.values())if(c.visible&&c.localBounds!=null)frame=SceneBounds.merge(frame,SceneBounds.transformed(c.localBounds,c.pose));if(frame==null)return;System.arraycopy(frame,0,sceneFrame,0,6);cx=(frame[0]+frame[3])*.5f;cy=(frame[1]+frame[4])*.5f;cz=(frame[2]+frame[5])*.5f;span=Math.max(1f,Math.max(frame[3]-frame[0],Math.max(frame[4]-frame[1],frame[5]-frame[2])));buildGrid();updateActivePivot();}
         void fitVisible(){updateSceneFrame();zoom=1f;panX=panY=panZ=0f;}
         void updateActivePivot(){if(activeSceneIds.isEmpty())return;gizmoPivot[0]=transform[0];gizmoPivot[1]=transform[1];gizmoPivot[2]=transform[2];}
         void buildGrid(){float raw=span/10f,pow=(float)Math.pow(10,Math.floor(Math.log10(raw))),n=raw/pow,step=(n<2?1:n<5?2:5)*pow;int half=10;gridCount=(half*2+1)*4+6;gridBuffer=direct(gridCount*3);float extent=step*half;for(int i=-half;i<=half;i++){float p=i*step;put(gridBuffer,cx-extent,p+cy,0,cx+extent,p+cy,0);put(gridBuffer,p+cx,cy-extent,0,p+cx,cy+extent,0);}put(gridBuffer,cx-extent,0,0,cx+extent,0,0);put(gridBuffer,0,cy-extent,0,0,cy+extent,0);put(gridBuffer,0,0,-extent*.25f,0,0,extent*.25f);gridBuffer.position(0);}
         static void put(FloatBuffer b,float...v){b.put(v);}
 
-        @Override public void onSurfaceCreated(javax.microedition.khronos.opengles.GL10 gl,javax.microedition.khronos.egl.EGLConfig cfg){GLES20.glClearColor(.015f,.025f,.04f,1);GLES20.glEnable(GLES20.GL_DEPTH_TEST);program=link(VS,FS);position=GLES20.glGetAttribLocation(program,"aPosition");matrix=GLES20.glGetUniformLocation(program,"uMvp");color=GLES20.glGetUniformLocation(program,"uColor");size=GLES20.glGetUniformLocation(program,"uSize");}
+        @Override public void onSurfaceCreated(javax.microedition.khronos.opengles.GL10 gl,javax.microedition.khronos.egl.EGLConfig cfg){GLES20.glClearColor(.015f,.025f,.04f,1);GLES20.glEnable(GLES20.GL_DEPTH_TEST);program=link(VS,FS);position=GLES20.glGetAttribLocation(program,"aPosition");matrix=GLES20.glGetUniformLocation(program,"uMvp");world=GLES20.glGetUniformLocation(program,"uWorld");color=GLES20.glGetUniformLocation(program,"uColor");size=GLES20.glGetUniformLocation(program,"uSize");clipMin=GLES20.glGetUniformLocation(program,"uClipMin");clipMax=GLES20.glGetUniformLocation(program,"uClipMax");clip=GLES20.glGetUniformLocation(program,"uClip");Matrix.setIdentityM(identity,0);}
         @Override public void onSurfaceChanged(javax.microedition.khronos.opengles.GL10 gl,int w,int h){width=w;height=h;GLES20.glViewport(0,0,w,h);}
         @Override public void onDrawFrame(javax.microedition.khronos.opengles.GL10 gl){
-            GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT|GLES20.GL_DEPTH_BUFFER_BIT);if(sceneClouds.isEmpty())return;setMatrices();GLES20.glUseProgram(program);GLES20.glEnableVertexAttribArray(position);GLES20.glUniform1f(size,pointSize);
+            GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT|GLES20.GL_DEPTH_BUFFER_BIT);if(sceneClouds.isEmpty())return;setMatrices();GLES20.glUseProgram(program);GLES20.glEnableVertexAttribArray(position);GLES20.glUniform1f(size,pointSize);GLES20.glUniform3fv(clipMin,1,clipLower,0);GLES20.glUniform3fv(clipMax,1,clipUpper,0);GLES20.glUniform1f(clip,clipping?1:0);
             if(gridVisible&&gridBuffer!=null){draw(gridBuffer,gridCount,GLES20.GL_LINES,gridMvp,.20f,.28f,.34f,1);drawAxes();}
-            for(SceneCloud c:sceneClouds.values())if(c.visible)for(FloatBuffer chunk:c.chunks)draw(chunk,chunk.capacity()/3,GLES20.GL_POINTS,sceneMvp(c),c.r,c.g,c.b,1);
+            for(SceneCloud c:sceneClouds.values())if(c.visible)for(FloatBuffer chunk:c.chunks)drawScene(chunk,chunk.capacity()/3,c);
+            if(clipping&&clipControlsVisible){GLES20.glDisable(GLES20.GL_DEPTH_TEST);drawClipBox();GLES20.glEnable(GLES20.GL_DEPTH_TEST);}
             if(activeTargetNodeId!=null&&!activeSceneIds.isEmpty()){GLES20.glDisable(GLES20.GL_DEPTH_TEST);drawGizmo();GLES20.glEnable(GLES20.GL_DEPTH_TEST);}
             if(measureCount==2){measureBuffer.position(0);measureBuffer.put(measure).position(0);GLES20.glLineWidth(3);draw(measureBuffer,2,GLES20.GL_LINES,primaryMvp,1,1,1,1);}
-            long now=System.nanoTime();if(fpsStarted==0)fpsStarted=now;if(++fpsFrames>=30){float fps=fpsFrames*1_000_000_000f/Math.max(1,now-fpsStarted);fpsFrames=0;fpsStarted=now;PerformanceListener listener=performanceListener;if(listener!=null)post(()->listener.onFrameRate(fps));}
+            long now=System.nanoTime();if(fpsStarted==0)fpsStarted=now;if(++fpsFrames>=30){float fps=fpsFrames*1_000_000_000f/Math.max(1,now-fpsStarted);fpsFrames=0;fpsStarted=now;PerformanceListener listener=performanceListener;if(listener!=null)new android.os.Handler(android.os.Looper.getMainLooper()).post(()->listener.onFrameRate(fps));}
             GLES20.glDisableVertexAttribArray(position);
         }
         void setMatrices(){float aspect=(float)width/Math.max(1,height);if(orthographic)Matrix.orthoM(projection,0,-2*aspect/zoom,2*aspect/zoom,-2/zoom,2/zoom,.1f,20);else Matrix.perspectiveM(projection,0,45,aspect,.1f,20);float yr=(float)Math.toRadians(yaw),pr=(float)Math.toRadians(pitch),d=orthographic?4f:3.5f/zoom;float ex=(float)(d*Math.cos(pr)*Math.sin(yr)),ey=(float)(-d*Math.cos(pr)*Math.cos(yr)),ez=(float)(-d*Math.sin(pr));Matrix.setLookAtM(view,0,ex+panX,ey+panY,ez+panZ,panX,panY,panZ,0,0,1);Matrix.setIdentityM(commonModel,0);Matrix.scaleM(commonModel,0,2/span,2/span,2/span);Matrix.translateM(commonModel,0,-cx,-cy,-cz);Matrix.multiplyMM(primaryMv,0,view,0,commonModel,0);Matrix.multiplyMM(primaryMvp,0,projection,0,primaryMv,0);inverseMvpValid=Matrix.invertM(inversePrimaryMvp,0,primaryMvp,0);System.arraycopy(primaryMvp,0,gridMvp,0,16);updateGizmoPivot();if(inverseMvpValid)gizmo.updateScale(gizmoPivot,primaryMvp,inversePrimaryMvp,width,height);}
-        void draw(FloatBuffer b,int count,int mode,float[] m,float r,float g,float bl,float a){b.position(0);GLES20.glUniformMatrix4fv(matrix,1,false,m,0);GLES20.glUniform4f(color,r,g,bl,a);GLES20.glVertexAttribPointer(position,3,GLES20.GL_FLOAT,false,12,b);GLES20.glDrawArrays(mode,0,count);}
+        void draw(FloatBuffer b,int count,int mode,float[] m,float r,float g,float bl,float a){b.position(0);GLES20.glUniform1f(clip,0);GLES20.glUniformMatrix4fv(matrix,1,false,m,0);GLES20.glUniformMatrix4fv(world,1,false,identity,0);GLES20.glUniform4f(color,r,g,bl,a);GLES20.glVertexAttribPointer(position,3,GLES20.GL_FLOAT,false,12,b);GLES20.glDrawArrays(mode,0,count);}
+        void drawScene(FloatBuffer b,int count,SceneCloud c){float[] w=new float[16];Matrix.setIdentityM(w,0);Matrix.translateM(w,0,c.pose[0],c.pose[1],c.pose[2]);Matrix.rotateM(w,0,c.pose[3],0,0,1);b.position(0);GLES20.glUniform1f(clip,clipping?1:0);GLES20.glUniformMatrix4fv(matrix,1,false,sceneMvp(c),0);GLES20.glUniformMatrix4fv(world,1,false,w,0);GLES20.glUniform4f(color,c.r,c.g,c.b,1);GLES20.glVertexAttribPointer(position,3,GLES20.GL_FLOAT,false,12,b);GLES20.glDrawArrays(GLES20.GL_POINTS,0,count);}
         float[] sceneMvp(SceneCloud c){float[] model=new float[16],mv=new float[16],mvp=new float[16];Matrix.setIdentityM(local,0);Matrix.translateM(local,0,c.pose[0],c.pose[1],c.pose[2]);Matrix.rotateM(local,0,c.pose[3],0,0,1);Matrix.multiplyMM(model,0,commonModel,0,local,0);Matrix.multiplyMM(mv,0,view,0,model,0);Matrix.multiplyMM(mvp,0,projection,0,mv,0);return mvp;}
         void drawAxes(){float e=span*.7f;FloatBuffer b=gizmoBuffer;b.position(0);put(b,0,0,0,e,0,0);b.position(0);draw(b,2,GLES20.GL_LINES,gridMvp,1,.18f,.18f,1);b.position(0);put(b,0,0,0,0,e,0);b.position(0);draw(b,2,GLES20.GL_LINES,gridMvp,.18f,1,.3f,1);b.position(0);put(b,0,0,0,0,0,e);b.position(0);draw(b,2,GLES20.GL_LINES,gridMvp,.2f,.45f,1,1);}
         void drawGizmo(){float s=gizmo.worldScale(),x=gizmoPivot[0],y=gizmoPivot[1],z=gizmoPivot[2];FloatBuffer b=gizmoBuffer;GLES20.glLineWidth(5);drawGizmoLine(b,x,y,z,x+s,y,z,TransformGizmo.X,1,.15f,.15f);drawGizmoLine(b,x,y,z,x,y+s,z,TransformGizmo.Y,.15f,1,.3f);drawGizmoLine(b,x,y,z,x,y,z+s,TransformGizmo.Z,.2f,.5f,1);b.position(0);float c=s*.12f;put(b,x-c,y-c,z,x+c,y+c,z,x-c,y+c,z,x+c,y-c,z);b.position(0);float xy=gizmo.activeHandle()==TransformGizmo.XY?1f:.72f;draw(b,4,GLES20.GL_LINES,primaryMvp,xy,xy,xy,1);b.position(0);int seg=48;for(int i=0;i<seg;i++){double a=i*Math.PI*2/seg,n=(i+1)*Math.PI*2/seg;put(b,x+(float)Math.cos(a)*s*.75f,y+(float)Math.sin(a)*s*.75f,z,x+(float)Math.cos(n)*s*.75f,y+(float)Math.sin(n)*s*.75f,z);}b.position(0);float hi=gizmo.activeHandle()==TransformGizmo.RZ?1f:.75f;draw(b,seg*2,GLES20.GL_LINES,primaryMvp,1,hi,.15f,1);}
+        void drawClipBox(){float x0=clipLower[0],y0=clipLower[1],z0=clipLower[2],x1=clipUpper[0],y1=clipUpper[1],z1=clipUpper[2],mx=(x0+x1)*.5f,my=(y0+y1)*.5f,mz=(z0+z1)*.5f,h=span*.08f;FloatBuffer b=gizmoBuffer;b.position(0);put(b,x0,y0,z0,x1,y0,z0,x1,y0,z0,x1,y1,z0,x1,y1,z0,x0,y1,z0,x0,y1,z0,x0,y0,z0,x0,y0,z1,x1,y0,z1,x1,y0,z1,x1,y1,z1,x1,y1,z1,x0,y1,z1,x0,y1,z1,x0,y0,z1,x0,y0,z0,x0,y0,z1,x1,y0,z0,x1,y0,z1,x1,y1,z0,x1,y1,z1,x0,y1,z0,x0,y1,z1,x0,my,mz,x0-h,my,mz,x1,my,mz,x1+h,my,mz,mx,y0,mz,mx,y0-h,mz,mx,y1,mz,mx,y1+h,mz,mx,my,z0,mx,my,z0-h,mx,my,z1,mx,my,z1+h);b.position(0);GLES20.glLineWidth(3);draw(b,36,GLES20.GL_LINES,primaryMvp,1,.78f,.12f,1);}
         void drawGizmoLine(FloatBuffer b,float x1,float y1,float z1,float x2,float y2,float z2,int handle,float r,float g,float bl){b.position(0);put(b,x1,y1,z1,x2,y2,z2);b.position(0);float boost=gizmo.activeHandle()==handle?1f:.78f;draw(b,2,GLES20.GL_LINES,primaryMvp,Math.min(1,r*boost+.2f*(1-boost)),Math.min(1,g*boost+.2f*(1-boost)),Math.min(1,bl*boost+.2f*(1-boost)),1);}
         void updateGizmoPivot(){if(!activeSceneIds.isEmpty())updateActivePivot();}
         void beginGizmo(float x,float y){if(activeTargetNodeId==null||activeSceneIds.isEmpty()||!inverseMvpValid){gizmo.endDrag();frameLockedForGizmo=false;return;}updateGizmoPivot();frameLockedForGizmo=gizmo.beginDrag(x,y,transform,gizmoPivot,primaryMvp,inversePrimaryMvp,width,height);}

@@ -16,6 +16,7 @@ import android.widget.FrameLayout;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
+import android.widget.SeekBar;
 import android.widget.TextView;
 
 import java.io.File;
@@ -67,6 +68,7 @@ public final class MainActivity extends Activity {
     private List<ProjectModel.Scan> candidateGraphScans;
     private float[] candidateGraphWorld;
     private boolean x7Running;
+    private boolean clipEnabled,clipLocked;
     private boolean previewMode,previewInFlight;
     private File previewFile;
     private volatile TrimbleX7Client activeX7Client;
@@ -110,6 +112,7 @@ public final class MainActivity extends Activity {
         findViewById(R.id.pairDetails).setOnClickListener(v->togglePanel(settingsPanel,scanPanel));
         findViewById(R.id.compactProjection).setOnClickListener(v->{project.orthographic=!project.orthographic;cloud.toggleProjection();changed();});
         findViewById(R.id.grid).setOnClickListener(v->{project.gridVisible=!project.gridVisible;cloud.setGridVisible(project.gridVisible);changed();});
+        View clipPanel=findViewById(R.id.zClipPanel);SeekBar clipLower=findViewById(R.id.zClipLower),clipUpper=findViewById(R.id.zClipUpper);findViewById(R.id.section).setOnClickListener(v->{clipEnabled=!clipEnabled;clipLocked=false;cloud.enableDefaultClip(clipEnabled);clipPanel.setVisibility(clipEnabled?View.VISIBLE:View.GONE);});SeekBar.OnSeekBarChangeListener clipListener=new SeekBar.OnSeekBarChangeListener(){public void onProgressChanged(SeekBar bar,int value,boolean user){if(!user||clipLocked)return;int lo=Math.min(clipLower.getProgress(),clipUpper.getProgress()-1),hi=Math.max(clipUpper.getProgress(),lo+1);cloud.setZClipFractions(lo/100f,hi/100f);}public void onStartTrackingTouch(SeekBar bar){}public void onStopTrackingTouch(SeekBar bar){}};clipLower.setOnSeekBarChangeListener(clipListener);clipUpper.setOnSeekBarChangeListener(clipListener);findViewById(R.id.lockClip).setOnClickListener(v->{clipLocked=true;cloud.setClipControlsVisible(false);clipPanel.setVisibility(View.GONE);status.setText("Сечение зафиксировано");});findViewById(R.id.resetClip).setOnClickListener(v->{clipEnabled=false;clipLocked=false;clipLower.setProgress(0);clipUpper.setProgress(100);cloud.enableDefaultClip(false);cloud.setClipControlsVisible(true);clipPanel.setVisibility(View.GONE);});
         for(int i=0;i<POINT_BUDGETS.length;i++)if(POINT_BUDGETS[i]==project.pointBudget)budgetIndex=i;for(int i=0;i<POINT_SIZES.length;i++)if(POINT_SIZES[i]==project.pointSize)pointSizeIndex=i;
         pointSizeButton.setText("•• "+project.pointSize);budgetButton.setText(budgetLabel(project.pointBudget));
         pointSizeButton.setOnClickListener(v->{pointSizeIndex=(pointSizeIndex+1)%POINT_SIZES.length;project.pointSize=POINT_SIZES[pointSizeIndex];cloud.setPointSize(project.pointSize);pointSizeButton.setText("•• "+project.pointSize);changed();});

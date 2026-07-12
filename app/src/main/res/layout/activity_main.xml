@@ -26,6 +26,7 @@
         <Button android:id="@+id/measure" style="@style/CompactTool" android:layout_width="44dp" android:layout_height="44dp" android:text="◎" android:contentDescription="Измерение"/>
         <Button android:id="@+id/compactProjection" style="@style/CompactTool" android:layout_width="44dp" android:layout_height="44dp" android:text="P" android:textSize="11sp" android:contentDescription="Режим проекции"/>
         <Button android:id="@+id/grid" style="@style/CompactTool" android:layout_width="44dp" android:layout_height="44dp" android:text="▦" android:contentDescription="Сетка"/>
+        <Button android:id="@+id/section" style="@style/CompactTool" android:layout_width="44dp" android:layout_height="44dp" android:text="CUT" android:textSize="9sp" android:contentDescription="Сечение"/>
         <Button android:id="@+id/pointSize" style="@style/CompactTool" android:layout_width="44dp" android:layout_height="44dp" android:text="•• 2" android:textSize="10sp" android:contentDescription="Размер точек"/>
         <Button android:id="@+id/pointBudget" style="@style/CompactTool" android:layout_width="44dp" android:layout_height="44dp" android:text="150k" android:textSize="10sp" android:contentDescription="Количество точек"/>
         <Button android:id="@+id/moreTools" style="@style/CompactTool" android:layout_width="44dp" android:layout_height="44dp" android:text="⋯" android:contentDescription="Меню сшивки"/>
@@ -38,6 +39,18 @@
         android:layout_gravity="bottom|start" android:layout_marginStart="60dp" android:layout_marginBottom="64dp"
         android:maxWidth="280dp" android:padding="7dp" android:background="@color/panel"
         android:text="Добавьте TZF кнопкой ＋" android:textColor="@color/text_secondary" />
+
+    <LinearLayout android:id="@+id/zClipPanel" android:layout_width="190dp" android:layout_height="wrap_content"
+        android:layout_gravity="bottom|end" android:layout_marginEnd="8dp" android:layout_marginBottom="70dp"
+        android:orientation="vertical" android:padding="8dp" android:background="@color/panel" android:visibility="gone" android:elevation="10dp">
+        <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Сечение Z: пол / потолок" android:textColor="@color/text_primary" />
+        <SeekBar android:id="@+id/zClipLower" android:layout_width="match_parent" android:layout_height="36dp" android:max="100" android:progress="0" />
+        <SeekBar android:id="@+id/zClipUpper" android:layout_width="match_parent" android:layout_height="36dp" android:max="100" android:progress="100" />
+        <LinearLayout android:layout_width="match_parent" android:layout_height="40dp">
+            <Button android:id="@+id/lockClip" style="@style/ToolButton" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:text="Зафиксировать" />
+            <Button android:id="@+id/resetClip" style="@style/ToolButton" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:text="Сброс" />
+        </LinearLayout>
+    </LinearLayout>
 
     <LinearLayout android:id="@+id/pairCard" android:layout_width="match_parent" android:layout_height="54dp"
         android:layout_gravity="bottom" android:layout_margin="8dp" android:orientation="horizontal"
