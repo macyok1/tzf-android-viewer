@@ -64,6 +64,9 @@ public final class MainActivity extends Activity {
     private Button cancelButton,applyCandidateButton,rejectCandidateButton,pointSizeButton,budgetButton,stitchMenuButton,scanX7Button,cancelX7Button;
     private ProgressBar registrationProgress,x7Progress;
     private View scanPanel,settingsPanel;
+    private View clipPanel;
+    private SeekBar clipLowerBar,clipUpperBar;
+    private boolean updatingClipUi;
     private int budgetIndex,pointSizeIndex;
     private boolean stitchingActionsEnabled=true;
     private float[] candidateWorld,candidateOriginalWorld;
@@ -117,7 +120,7 @@ public final class MainActivity extends Activity {
         findViewById(R.id.pairDetails).setOnClickListener(v->togglePanel(settingsPanel,scanPanel));
         findViewById(R.id.compactProjection).setOnClickListener(v->{project.orthographic=!project.orthographic;cloud.toggleProjection();changed();});
         findViewById(R.id.grid).setOnClickListener(v->{project.gridVisible=!project.gridVisible;cloud.setGridVisible(project.gridVisible);changed();});
-        View clipPanel=findViewById(R.id.zClipPanel);SeekBar clipLower=findViewById(R.id.zClipLower),clipUpper=findViewById(R.id.zClipUpper);findViewById(R.id.section).setOnClickListener(v->{clipEnabled=!clipEnabled;clipLocked=false;cloud.enableDefaultClip(clipEnabled);clipPanel.setVisibility(clipEnabled?View.VISIBLE:View.GONE);});SeekBar.OnSeekBarChangeListener clipListener=new SeekBar.OnSeekBarChangeListener(){public void onProgressChanged(SeekBar bar,int value,boolean user){if(!user||clipLocked)return;int lo=Math.min(clipLower.getProgress(),clipUpper.getProgress()-1),hi=Math.max(clipUpper.getProgress(),lo+1);cloud.setZClipFractions(lo/100f,hi/100f);}public void onStartTrackingTouch(SeekBar bar){}public void onStopTrackingTouch(SeekBar bar){}};clipLower.setOnSeekBarChangeListener(clipListener);clipUpper.setOnSeekBarChangeListener(clipListener);findViewById(R.id.lockClip).setOnClickListener(v->{clipLocked=true;cloud.setClipControlsVisible(false);clipPanel.setVisibility(View.GONE);status.setText("Сечение зафиксировано");});findViewById(R.id.resetClip).setOnClickListener(v->{clipEnabled=false;clipLocked=false;clipLower.setProgress(0);clipUpper.setProgress(100);cloud.enableDefaultClip(false);cloud.setClipControlsVisible(true);clipPanel.setVisibility(View.GONE);});
+        bindClipping();
         for(int i=0;i<POINT_BUDGETS.length;i++)if(POINT_BUDGETS[i]==project.pointBudget)budgetIndex=i;for(int i=0;i<POINT_SIZES.length;i++)if(POINT_SIZES[i]==project.pointSize)pointSizeIndex=i;
         pointSizeButton.setText("•• "+project.pointSize);budgetButton.setText(budgetLabel(project.pointBudget));
         pointSizeButton.setOnClickListener(v->{pointSizeIndex=(pointSizeIndex+1)%POINT_SIZES.length;project.pointSize=POINT_SIZES[pointSizeIndex];cloud.setPointSize(project.pointSize);pointSizeButton.setText("•• "+project.pointSize);changed();});
@@ -127,6 +130,18 @@ public final class MainActivity extends Activity {
         findViewById(R.id.resetTransform).setOnClickListener(v->resetMoving());findViewById(R.id.saveTransform).setOnClickListener(v->saveMovingSnapshot());findViewById(R.id.restoreTransform).setOnClickListener(v->restoreMovingSnapshot());
         setRegistrationRunning(false);
     }
+
+    private void bindClipping(){
+        clipPanel=findViewById(R.id.zClipPanel);clipLowerBar=findViewById(R.id.zClipLower);clipUpperBar=findViewById(R.id.zClipUpper);cloud.setClipListener(this::onClipChanged);
+        findViewById(R.id.section).setOnClickListener(v->{if(clipEnabled){disableClipping();return;}if(readyScans().isEmpty()){status.setText("Сначала дождитесь загрузки скана");return;}clipEnabled=true;clipLocked=false;project.clipEnabled=true;project.clipLocked=false;cloud.setClipControlsVisible(true);cloud.enableDefaultClip(true);clipPanel.setVisibility(View.VISIBLE);});
+        SeekBar.OnSeekBarChangeListener listener=new SeekBar.OnSeekBarChangeListener(){public void onProgressChanged(SeekBar bar,int value,boolean user){if(!user||updatingClipUi||clipLocked)return;int lo=Math.min(clipLowerBar.getProgress(),clipUpperBar.getProgress()-1),hi=Math.max(clipUpperBar.getProgress(),lo+1);cloud.setZClipFractions(lo/100f,hi/100f);}public void onStartTrackingTouch(SeekBar bar){}public void onStopTrackingTouch(SeekBar bar){if(!updatingClipUi&&clipEnabled&&!clipLocked)cloud.commitClipBounds();}};clipLowerBar.setOnSeekBarChangeListener(listener);clipUpperBar.setOnSeekBarChangeListener(listener);
+        findViewById(R.id.lockClip).setOnClickListener(v->{if(!clipEnabled)return;clipLocked=true;project.clipLocked=true;cloud.setClipControlsVisible(false);clipPanel.setVisibility(View.GONE);changed();status.setText("Сечение зафиксировано");});
+        findViewById(R.id.resetClip).setOnClickListener(v->disableClipping());
+        clipEnabled=project.clipEnabled&&ClipBoxMath.valid(project.clipBounds);clipLocked=clipEnabled&&project.clipLocked;if(clipEnabled){cloud.setClipBounds(Arrays.copyOfRange(project.clipBounds,0,3),Arrays.copyOfRange(project.clipBounds,3,6),true);cloud.setClipControlsVisible(!clipLocked);clipPanel.setVisibility(clipLocked?View.GONE:View.VISIBLE);}else{project.clipEnabled=false;project.clipLocked=false;}
+    }
+
+    private void disableClipping(){clipEnabled=false;clipLocked=false;project.clipEnabled=false;project.clipLocked=false;Arrays.fill(project.clipBounds,0);updatingClipUi=true;clipLowerBar.setProgress(0);clipUpperBar.setProgress(100);updatingClipUi=false;cloud.enableDefaultClip(false);cloud.setClipControlsVisible(true);clipPanel.setVisibility(View.GONE);changed();}
+    private void onClipChanged(float[] bounds,float[] frame,boolean commit){if(!clipEnabled)return;if(!ClipBoxMath.valid(bounds)){clipEnabled=false;project.clipEnabled=false;clipPanel.setVisibility(View.GONE);status.setText("Сечение: нет готовых точек");return;}System.arraycopy(bounds,0,project.clipBounds,0,6);project.clipEnabled=true;project.clipLocked=clipLocked;if(ClipBoxMath.valid(frame)){float range=Math.max(.001f,frame[5]-frame[2]);int lower=Math.max(0,Math.min(100,Math.round((bounds[2]-frame[2])/range*100))),upper=Math.max(0,Math.min(100,Math.round((bounds[5]-frame[2])/range*100)));updatingClipUi=true;clipLowerBar.setProgress(Math.min(lower,upper-1));clipUpperBar.setProgress(Math.max(upper,lower+1));updatingClipUi=false;}if(commit)changed();}
 
     private void bindTree(){tree.bind(project,new ScanTreePanel.Listener(){public void changed(){rejectRegistrationCandidate();MainActivity.this.changed();syncScene();updateRoleUi();}public void visibilityChanged(ProjectModel.Node node){rejectRegistrationCandidate();syncScene();}public void rolesChanged(){rejectRegistrationCandidate();updateRoleUi();syncScene();}});}
     private void sizeOverlays(){findViewById(R.id.viewportContainer).post(()->{int max=Math.round(findViewById(R.id.viewportContainer).getHeight()*.35f),cap=dp(220),height=Math.min(cap,max);scanPanel.getLayoutParams().height=height;settingsPanel.getLayoutParams().height=height;scanPanel.requestLayout();settingsPanel.requestLayout();});}

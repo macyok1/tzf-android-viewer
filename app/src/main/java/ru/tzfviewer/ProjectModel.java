@@ -6,7 +6,7 @@ import java.util.List;
 import java.util.UUID;
 
 final class ProjectModel {
-    static final int FORMAT_VERSION = 2;
+    static final int FORMAT_VERSION = 3;
     final String id;
     String name;
     long createdAt;
@@ -15,6 +15,8 @@ final class ProjectModel {
     int pointSize = 2;
     float cameraYaw = 25f, cameraPitch = -18f, cameraZoom = 1f;
     boolean orthographic, gridVisible = true;
+    boolean clipEnabled, clipLocked;
+    final float[] clipBounds = new float[6];
     String referenceNodeId = "", movingNodeId = "";
     final Group root;
 
