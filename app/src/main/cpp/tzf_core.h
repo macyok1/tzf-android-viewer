@@ -93,17 +93,27 @@ public:
     explicit PreviewSession(const std::filesystem::path& path);
     void prepare(std::uint32_t maxPoints);
     [[nodiscard]] std::vector<float> nextChunk(std::uint32_t maxPoints);
-    void rewind() noexcept { cursor_ = 0; }
-    [[nodiscard]] bool finished() const noexcept { return cursor_ >= xyz_.size(); }
+    void rewind() noexcept;
+    [[nodiscard]] bool finished() const noexcept;
     [[nodiscard]] std::uint64_t sourcePointCount() const noexcept { return scanInfo_.validPointCount; }
-    [[nodiscard]] std::uint32_t preparedPointCount() const noexcept { return static_cast<std::uint32_t>(xyz_.size()/3U); }
+    [[nodiscard]] std::uint32_t preparedPointCount() const noexcept { return emittedPoints_; }
 private:
     BinaryFile file_;
     FileHeader fileHeader_;
     ScanInfo scanInfo_;
     BlockDirectory directory_;
-    std::vector<float> xyz_;
-    std::size_t cursor_{};
+    std::uint32_t maxPoints_{};
+    std::uint32_t emittedPoints_{};
+    std::uint32_t sampleStride_{1};
+    std::uint32_t tileColumns_{};
+    std::uint32_t tileRows_{};
+    std::uint32_t tileX_{};
+    std::uint32_t tileY_{};
+    std::uint32_t localX_{};
+    std::uint32_t localY_{};
+    bool tileLoaded_{};
+    std::array<TileHeader,3> tileHeaders_{};
+    std::array<std::vector<std::uint8_t>,3> tileChannels_{};
 };
 
 [[nodiscard]] BlockDirectory parseBlockDirectory(BinaryFile& file,

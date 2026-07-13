@@ -519,9 +519,9 @@ PointCloudPreview decodePointCloudPreview(
 
     const auto gridPointCount = static_cast<std::uint64_t>(scanInfo.width) *
                                 scanInfo.height;
-    const auto stride = std::max<std::uint32_t>(
-        1U, static_cast<std::uint32_t>(std::ceil(std::sqrt(
-                static_cast<double>(gridPointCount) / maxPoints))));
+    const auto stride = maxPoints >= scanInfo.validPointCount ? 1U :
+        std::max<std::uint32_t>(1U, static_cast<std::uint32_t>(std::ceil(
+            std::sqrt(static_cast<double>(gridPointCount) / maxPoints))));
     PointCloudPreview preview;
     preview.sourcePointCount = scanInfo.validPointCount;
     preview.xyz.reserve(static_cast<std::size_t>(maxPoints) * 3U);
@@ -592,23 +592,104 @@ PreviewSession::PreviewSession(const std::filesystem::path& path)
 
 void PreviewSession::prepare(std::uint32_t maxPoints) {
     if (maxPoints == 0) throw std::runtime_error("preview point limit is zero");
-    if (xyz_.size() / 3U >= maxPoints || xyz_.size() / 3U >= scanInfo_.validPointCount) {
-        cursor_ = 0;
-        return;
+    constexpr std::uint32_t tileSize = 512;
+    if (scanInfo_.tileSize != tileSize) {
+        throw std::runtime_error("unsupported TZF tile size");
     }
-    xyz_ = decodePointCloudPreview(file_, fileHeader_, scanInfo_, directory_, maxPoints, 1).xyz;
-    cursor_ = 0;
+    tileColumns_ = (scanInfo_.width + tileSize - 1U) / tileSize;
+    tileRows_ = (scanInfo_.height + tileSize - 1U) / tileSize;
+    const auto gridPointCount = static_cast<std::uint64_t>(scanInfo_.width) *
+                                scanInfo_.height;
+    sampleStride_ = maxPoints >= scanInfo_.validPointCount ? 1U :
+        std::max<std::uint32_t>(1U, static_cast<std::uint32_t>(std::ceil(
+            std::sqrt(static_cast<double>(gridPointCount) / maxPoints))));
+    maxPoints_ = maxPoints;
+    rewind();
 }
 
 std::vector<float> PreviewSession::nextChunk(std::uint32_t maxPoints) {
-    if (maxPoints == 0 || cursor_ >= xyz_.size()) return {};
-    const auto remainingPoints = (xyz_.size() - cursor_) / 3U;
-    const auto count = std::min<std::size_t>(remainingPoints, maxPoints);
-    const auto end = cursor_ + count * 3U;
-    std::vector<float> chunk(xyz_.begin() + static_cast<std::ptrdiff_t>(cursor_),
-                             xyz_.begin() + static_cast<std::ptrdiff_t>(end));
-    cursor_ = end;
+    constexpr std::uint32_t tileSize = 512;
+    if (maxPoints == 0 || finished()) return {};
+    std::vector<float> chunk;
+    chunk.reserve(static_cast<std::size_t>(std::min(
+        maxPoints, maxPoints_ - emittedPoints_)) * 3U);
+    const auto& rhoComponent = requireComponent(directory_, 1);
+    const auto& polarComponent = requireComponent(directory_, 2);
+    const auto& azimuthComponent = requireComponent(directory_, 3);
+    const auto expectedTiles = static_cast<std::uint64_t>(tileColumns_) * tileRows_;
+    if (rhoComponent.blocks.size() != expectedTiles ||
+        polarComponent.blocks.size() != expectedTiles ||
+        azimuthComponent.blocks.size() != expectedTiles) {
+        throw std::runtime_error("TZF component tile count does not match scan");
+    }
+
+    while (chunk.size() / 3U < maxPoints && !finished()) {
+        if (!tileLoaded_) {
+            const auto tileIndex = static_cast<std::size_t>(tileX_) * tileRows_ + tileY_;
+            const std::array<const BlockDescriptor*,3> blocks{
+                &rhoComponent.blocks[tileIndex], &polarComponent.blocks[tileIndex],
+                &azimuthComponent.blocks[tileIndex]};
+            for (std::size_t channel = 0; channel < tileChannels_.size(); ++channel) {
+                tileHeaders_[channel] = parseTileHeader(file_, *blocks[channel]);
+                tileChannels_[channel] = decodeTilePayload(
+                    file_, *blocks[channel], tileHeaders_[channel]);
+                if (tileHeaders_[channel].width != tileSize ||
+                    tileHeaders_[channel].height != tileSize ||
+                    tileHeaders_[channel].scale == 0.0F) {
+                    throw std::runtime_error("unsupported TZF tile geometry or scale");
+                }
+            }
+            tileLoaded_ = true;
+        }
+
+        const auto firstX = tileX_ * tileSize;
+        const auto firstY = tileY_ * tileSize;
+        const auto xCount = std::min(tileSize, scanInfo_.width - firstX);
+        const auto yCount = std::min(tileSize, scanInfo_.height - firstY);
+        while (localX_ < xCount && chunk.size() / 3U < maxPoints &&
+               emittedPoints_ < maxPoints_) {
+            const auto x = firstX + localX_;
+            if (x % sampleStride_ != 0) { ++localX_; localY_ = 0; continue; }
+            while (localY_ < yCount && chunk.size() / 3U < maxPoints &&
+                   emittedPoints_ < maxPoints_) {
+                const auto y = firstY + localY_;
+                const auto valueIndex = static_cast<std::size_t>(localX_) * tileSize + localY_;
+                ++localY_;
+                if (y % sampleStride_ != 0) continue;
+                const auto rho = readU32(tileChannels_[0].data() + valueIndex * 4U);
+                if (rho == 0) continue;
+                const SphericalPoint spherical{
+                    static_cast<float>(rho) / tileHeaders_[0].scale,
+                    static_cast<float>(readI32(tileChannels_[2].data() + valueIndex * 4U)) /
+                        tileHeaders_[2].scale,
+                    static_cast<float>(readI32(tileChannels_[1].data() + valueIndex * 4U)) /
+                        tileHeaders_[1].scale};
+                const auto point = sphericalToXyz(spherical);
+                if (!std::isfinite(point.x) || !std::isfinite(point.y) ||
+                    !std::isfinite(point.z)) continue;
+                chunk.insert(chunk.end(), {point.x, point.y, point.z});
+                ++emittedPoints_;
+            }
+            if (localY_ >= yCount) { ++localX_; localY_ = 0; }
+        }
+        if (localX_ >= xCount) {
+            localX_ = localY_ = 0;
+            tileLoaded_ = false;
+            for (auto& channel : tileChannels_) channel.clear();
+            if (++tileY_ >= tileRows_) { tileY_ = 0; ++tileX_; }
+        }
+    }
     return chunk;
+}
+
+void PreviewSession::rewind() noexcept {
+    emittedPoints_ = tileX_ = tileY_ = localX_ = localY_ = 0;
+    tileLoaded_ = false;
+    for (auto& channel : tileChannels_) channel.clear();
+}
+
+bool PreviewSession::finished() const noexcept {
+    return maxPoints_ == 0 || emittedPoints_ >= maxPoints_ || tileX_ >= tileColumns_;
 }
 
 Point sphericalToXyz(const SphericalPoint& point) {
