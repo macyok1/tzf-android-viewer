@@ -21,6 +21,7 @@
         <Button android:id="@+id/scanX7" style="@style/CompactTool" android:layout_width="44dp" android:layout_height="44dp" android:text="X7" android:textSize="11sp" android:contentDescription="Сканировать Trimble X7"/>
         <Button android:id="@+id/compactOpen" style="@style/CompactTool" android:layout_width="44dp" android:layout_height="44dp" android:text="＋" android:contentDescription="Добавить TZF"/>
         <Button android:id="@+id/saveProject" style="@style/CompactTool" android:layout_width="44dp" android:layout_height="44dp" android:text="▣" android:contentDescription="Сохранить проект"/>
+        <Button android:id="@+id/exportAsc" style="@style/CompactTool" android:layout_width="44dp" android:layout_height="44dp" android:text="ASC" android:textSize="9sp" android:contentDescription="Экспорт проекта в ASC"/>
         <Button android:id="@+id/compactFit" style="@style/CompactTool" android:layout_width="44dp" android:layout_height="44dp" android:text="⌂" android:contentDescription="Показать всё"/>
         <Button android:id="@+id/scans" style="@style/CompactTool" android:layout_width="44dp" android:layout_height="44dp" android:text="R/M" android:textSize="10sp" android:contentDescription="Сканы и связки"/>
         <Button android:id="@+id/measure" style="@style/CompactTool" android:layout_width="44dp" android:layout_height="44dp" android:text="◎" android:contentDescription="Измерение"/>
