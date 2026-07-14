@@ -73,6 +73,8 @@ bool solve4(double a[4][4],double b[4],double x[4]){
 
 struct Metrics {
     double rms{}, p95{}, overlap{}, consistency{}, confidence{};
+    double reciprocalRatio{}, overlapBalance{}, residualStability{};
+    double residualQuality{};
     std::vector<double> distances;
 };
 
@@ -116,22 +118,30 @@ Metrics metrics(const std::vector<Vec3>& reference,
     const double backwardOverlap = reference.empty() ? 0.0 :
         static_cast<double>(backward) / reference.size();
     m.overlap = std::min(forwardOverlap, backwardOverlap);
-    m.consistency = forward == 0 ? 0.0 :
+    const double maximumOverlap = std::max(forwardOverlap, backwardOverlap);
+    m.overlapBalance = maximumOverlap <= 0 ? 0.0 :
+        m.overlap / maximumOverlap;
+    m.reciprocalRatio = forward == 0 ? 0.0 :
         static_cast<double>(reciprocal) / forward;
     if (!m.distances.empty()) {
         m.rms = std::sqrt(sum / m.distances.size());
         std::sort(m.distances.begin(), m.distances.end());
         m.p95 = m.distances[static_cast<std::size_t>(
             (m.distances.size() - 1) * .95)];
+        const double median = m.distances[m.distances.size() / 2];
+        m.residualStability = std::clamp(
+            1.0 - (m.p95 - median) / std::max(p95Limit, 1e-9),
+            0.0, 1.0);
     }
     const double rmsQuality = rmsLimit > 0 ?
         std::clamp(1.0 - m.rms / rmsLimit, 0.0, 1.0) : 0.0;
     const double p95Quality = p95Limit > 0 ?
         std::clamp(1.0 - m.p95 / p95Limit, 0.0, 1.0) : 0.0;
-    const double residualQuality = (rmsQuality + p95Quality) * .5;
-    m.confidence = 70.0 + 30.0 *
-        (.65 * std::clamp(m.consistency, 0.0, 1.0) +
-         .35 * residualQuality);
+    m.residualQuality = (rmsQuality + p95Quality) * .5;
+    m.consistency =
+        .15 * std::clamp(m.reciprocalRatio, 0.0, 1.0) +
+        .45 * std::clamp(m.overlapBalance, 0.0, 1.0) +
+        .40 * std::clamp(m.residualStability, 0.0, 1.0);
     return m;
 }
 
@@ -477,8 +487,19 @@ RegistrationResult registerConstrained(
     result.rms = quality.rms;
     result.p95 = quality.p95;
     result.overlap = quality.overlap;
-    result.consistency = quality.consistency;
-    result.confidence = quality.confidence;
+    const double translationScale =
+        std::max(span * .05, options.p95Limit * 10.0);
+    const double translationStability = std::clamp(
+        1.0 - result.correctionTranslation / translationScale, 0.0, 1.0);
+    const double yawStability = std::clamp(
+        1.0 - result.correctionYaw / 10.0, 0.0, 1.0);
+    const double refinementStability =
+        (translationStability + yawStability) * .5;
+    result.consistency = .75 * quality.consistency +
+                         .25 * refinementStability;
+    result.confidence = 73.0 + 27.0 *
+        (.25 * std::clamp(result.consistency, 0.0, 1.0) +
+         .75 * quality.residualQuality);
     if (result.overlap < options.minimumOverlap)
         return reject("insufficient validation overlap");
     if (result.consistency < options.minimumConsistency)
@@ -498,7 +519,7 @@ RegistrationResult registerGlobalConstrained(const std::vector<Point>& reference
     RegistrationResult rejected;if(reference.size()<100||moving.size()<100){rejected.reason="not enough points";return rejected;}
     if(!std::isfinite(options.yawStepDegrees)||options.yawStepDegrees<5.0||options.yawStepDegrees>90.0){rejected.reason="invalid yaw step";return rejected;}
     const double distinctTranslation=std::max(spanOf(reference,moving)/100.0,options.refinement.p95Limit*2.0);
-    RegistrationResult best,second;double bestScore=std::numeric_limits<double>::infinity(),secondScore=bestScore;
+    RegistrationResult best,second,bestRejected;double bestScore=std::numeric_limits<double>::infinity(),secondScore=bestScore,rejectedScore=-std::numeric_limits<double>::infinity();
     auto hypotheses = projectionHypotheses(reference, moving, options);
     if (hypotheses.empty()) {
         hypotheses = planeHypotheses(reference, moving, options);
@@ -510,12 +531,12 @@ RegistrationResult registerGlobalConstrained(const std::vector<Point>& reference
     for(const auto& initial:hypotheses){
         if(options.refinement.cancellation&&options.refinement.cancellation->load()){rejected.reason="cancelled";return rejected;}
         auto candidate=registerConstrained(reference,moving,initial,options.refinement);
-        if(!candidate.accepted)continue;
+        if(!candidate.accepted){const double diagnostic=candidate.confidence+candidate.overlap*20.0+candidate.consistency*10.0-std::min(10.0,candidate.rms/std::max(options.refinement.rmsLimit,1e-9))-std::min(10.0,candidate.p95/std::max(options.refinement.p95Limit,1e-9));if(bestRejected.reason.empty()||diagnostic>rejectedScore){bestRejected=candidate;rejectedScore=diagnostic;}continue;}
         const double score=candidate.rms+candidate.p95+(1.0-candidate.overlap)*options.refinement.p95Limit;
         if(best.accepted){double dx=candidate.transform[0]-best.transform[0],dy=candidate.transform[1]-best.transform[1],dz=candidate.transform[2]-best.transform[2];double da=std::remainder(candidate.transform[3]-best.transform[3],360.0);if(std::sqrt(dx*dx+dy*dy+dz*dz)<distinctTranslation&&std::abs(da)<1.0){if(score<bestScore){best=candidate;bestScore=score;}continue;}}
         if(score<bestScore){second=best;secondScore=bestScore;best=candidate;bestScore=score;}else if(score<secondScore){second=candidate;secondScore=score;}
     }
-    if(!best.accepted){rejected.reason="no global hypothesis";return rejected;}
+    if(!best.accepted){if(!bestRejected.reason.empty())return bestRejected;rejected.reason="no global hypothesis";return rejected;}
     if (second.accepted) {
         const double separation = (secondScore - bestScore) /
             std::max(bestScore, 1e-12);

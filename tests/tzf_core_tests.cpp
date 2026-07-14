@@ -162,6 +162,17 @@ int main() {
     assert(std::abs(registration.transform[2] - 0.04) < 0.02);
     assert(std::abs(registration.transform[3] - 7.0) < 0.5);
 
+    std::vector<tzf::Point> densityReference;
+    for (std::size_t i = 0; i < reference.size(); i += 2)
+        densityReference.push_back(reference[i]);
+    auto densityOptions = registrationOptions;
+    densityOptions.minimumOverlap = .25;
+    const auto densityMismatch = tzf::registerConstrained(
+        densityReference, moving, {0.10, -0.04, 0.02, 4.0},
+        densityOptions);
+    assert(densityMismatch.accepted);
+    assert(densityMismatch.consistency >= densityOptions.minimumConsistency);
+
     tzf::GlobalRegistrationOptions globalOptions;
     globalOptions.refinement = registrationOptions;
     globalOptions.yawStepDegrees = 10.0;
@@ -171,6 +182,14 @@ int main() {
     assert(std::abs(global.transform[1] + 0.08) < 0.03);
     assert(std::abs(global.transform[2] - 0.04) < 0.03);
     assert(std::abs(std::remainder(global.transform[3] - 7.0,360.0)) < 1.0);
+
+    auto strictGlobalOptions = globalOptions;
+    strictGlobalOptions.refinement.rmsLimit = 1e-12;
+    strictGlobalOptions.refinement.p95Limit = 1e-12;
+    const auto strictGlobal = tzf::registerGlobalConstrained(
+        reference, moving, strictGlobalOptions);
+    assert(!strictGlobal.accepted);
+    assert(strictGlobal.reason != "no global hypothesis");
 
     auto warningOptions = registrationOptions;
     warningOptions.rmsLimit = 1e-12;

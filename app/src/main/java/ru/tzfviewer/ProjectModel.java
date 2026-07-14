@@ -11,7 +11,7 @@ final class ProjectModel {
     String name;
     long createdAt;
     long modifiedAt;
-    int pointBudget = 150_000;
+    int pointBudget = -1;
     int pointSize = 2;
     float cameraYaw = 25f, cameraPitch = -18f, cameraZoom = 1f;
     boolean orthographic, gridVisible = true;
