@@ -162,13 +162,15 @@ int main() {
     assert(std::abs(registration.transform[2] - 0.04) < 0.02);
     assert(std::abs(registration.transform[3] - 7.0) < 0.5);
 
-    std::vector<tzf::Point> densityReference;
-    for (std::size_t i = 0; i < reference.size(); i += 2)
-        densityReference.push_back(reference[i]);
+    std::vector<tzf::Point> densityMoving = moving;
+    densityMoving.reserve(moving.size() * 2);
+    for (const auto point : moving)
+        densityMoving.push_back(
+            {point.x + .002F, point.y - .001F, point.z + .001F});
     auto densityOptions = registrationOptions;
     densityOptions.minimumOverlap = .25;
     const auto densityMismatch = tzf::registerConstrained(
-        densityReference, moving, {0.10, -0.04, 0.02, 4.0},
+        reference, densityMoving, {0.10, -0.04, 0.02, 4.0},
         densityOptions);
     assert(densityMismatch.accepted);
     assert(densityMismatch.consistency >= densityOptions.minimumConsistency);
