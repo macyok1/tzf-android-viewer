@@ -205,7 +205,9 @@ RegistrationInformation parseRegistrationInformation(
     for (double value : result.orientation)
         if (!std::isfinite(value)) return RegistrationInformation{};
     for (double value : result.translation)
-        if (!std::isfinite(value)) return RegistrationInformation{};
+        if (!std::isfinite(value) ||
+            std::abs(value) > std::numeric_limits<float>::max())
+            return RegistrationInformation{};
     const auto axisLength = [&](int offset) {
         return std::sqrt(result.orientation[offset] * result.orientation[offset] +
                          result.orientation[offset + 1] * result.orientation[offset + 1] +
@@ -652,6 +654,15 @@ PreviewSession::PreviewSession(const std::filesystem::path& path)
       directory_(parseBlockDirectory(file_, fileHeader_.blockDirectoryOffset)) {
     const auto validation = validateBlockDirectory(directory_, file_.size());
     if (!validation.empty()) throw std::runtime_error(validation);
+}
+
+std::array<float, 4> PreviewSession::initialPose() const noexcept {
+    if (!registration_.valid) return {};
+    return {
+        static_cast<float>(registration_.translation[0]),
+        static_cast<float>(registration_.translation[1]),
+        static_cast<float>(registration_.translation[2]),
+        static_cast<float>(registration_.yawDegrees)};
 }
 
 void PreviewSession::prepare(std::uint32_t maxPoints) {

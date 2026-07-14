@@ -51,6 +51,37 @@ public class ProjectModelTest {
         assertArrayEquals(requestedWorld,moving.worldTransform(),T);
         assertArrayEquals(new float[]{5f,-2f,1f,35f},parent.worldTransform(),T);
     }
+    @Test public void embeddedPoseRoundTripsInV4(){
+        ProjectModel p=new ProjectModel("p","pose",1);ProjectModel.Scan scan=new ProjectModel.Scan("s","scan");scan.embeddedPoseValid=true;scan.embeddedPoseApplied=true;System.arraycopy(new float[]{100,200,3,-45},0,scan.embeddedPose,0,4);p.root.add(scan);
+        ProjectModel.Scan restored=(ProjectModel.Scan)ProjectCodec.decode(ProjectCodec.encode(p)).findNode("s");
+        assertTrue(restored.embeddedPoseValid);assertTrue(restored.embeddedPoseApplied);assertArrayEquals(scan.embeddedPose,restored.embeddedPose,T);
+    }
+
+    @Test public void legacyV3MigrationNeverMovesExistingScan(){
+        ProjectModel p=new ProjectModel("p","legacy",1);ProjectModel.Scan scan=new ProjectModel.Scan("s","scan");System.arraycopy(new float[]{12,-8,3,77},0,scan.transform,0,4);p.root.add(scan);
+        String[] lines=ProjectCodec.encode(p).split("\\n");lines[0]="TZF_PROJECT\t3";String[] fields=lines[2].split("\\t",-1);lines[2]=String.join("\t",java.util.Arrays.copyOf(fields,13));
+        ProjectModel.Scan migrated=(ProjectModel.Scan)ProjectCodec.decode(String.join("\n",lines)).findNode("s");
+        assertArrayEquals(scan.transform,migrated.transform,T);assertTrue(migrated.embeddedPoseApplied);assertFalse(migrated.embeddedPoseValid);
+    }
+
+    @Test public void embeddedPosesUseFirstScanAsLocalOrigin(){
+        ProjectModel p=new ProjectModel("p","poses",1);ProjectModel.Scan anchor=new ProjectModel.Scan("a","a"),moving=new ProjectModel.Scan("m","m");p.root.add(anchor);
+        assertTrue(p.initializeEmbeddedPose(anchor,new float[]{1500,1500,0,-177.364f}));assertArrayEquals(new float[4],anchor.transform,T);
+        p.root.add(moving);assertTrue(p.initializeEmbeddedPose(moving,new float[]{1998.0331f,2288.1156f,3.8171f,59.0f}));
+        assertEquals(-533.7f,moving.transform[0],.5f);assertEquals(-764.4f,moving.transform[1],.5f);assertEquals(3.8171f,moving.transform[2],T);assertEquals(-123.636f,moving.transform[3],.01f);
+    }
+
+    @Test public void invalidPoseAndLegacyProjectDoNotMoveNewScan(){
+        ProjectModel p=new ProjectModel("p","mixed",1);ProjectModel.Scan legacy=new ProjectModel.Scan("l","legacy"),added=new ProjectModel.Scan("a","added");legacy.embeddedPoseApplied=true;p.root.add(legacy);p.root.add(added);
+        assertTrue(p.initializeEmbeddedPose(added,new float[]{1,2,3,4}));assertArrayEquals(new float[4],added.transform,T);assertTrue(added.embeddedPoseValid);
+        ProjectModel.Scan invalid=new ProjectModel.Scan("i","invalid");p.root.add(invalid);assertTrue(p.initializeEmbeddedPose(invalid,new float[]{Float.NaN,0,0,0}));assertFalse(invalid.embeddedPoseValid);assertArrayEquals(new float[4],invalid.transform,T);
+    }
+
+    @Test public void legacyScanCapturesMetadataWithoutChangingTransform(){
+        ProjectModel p=new ProjectModel("p","legacy",1);ProjectModel.Scan scan=new ProjectModel.Scan("s","scan");scan.embeddedPoseApplied=true;System.arraycopy(new float[]{5,-2,1,30},0,scan.transform,0,4);p.root.add(scan);
+        assertTrue(p.initializeEmbeddedPose(scan,new float[]{1500,1500,0,-177}));assertTrue(scan.embeddedPoseValid);assertArrayEquals(new float[]{5,-2,1,30},scan.transform,T);
+    }
+
     @Test public void storeSavesLoadsCopiesAndDeletesAtomically()throws Exception{
         java.io.File dir=Files.createTempDirectory("tzf-project-test").toFile();ProjectStore store=new ProjectStore(dir);ProjectModel p=new ProjectModel("abc-1","Original",1);p.root.add(new ProjectModel.Scan("s","Scan"));store.save(p);assertEquals(1,store.list().size());assertEquals(1,store.load(p.id).scanCount());ProjectModel copy=store.copy(p,"Copy",2);assertEquals(2,store.list().size());assertEquals("Copy",copy.name);store.delete(p.id);assertEquals(1,store.list().size());
     }

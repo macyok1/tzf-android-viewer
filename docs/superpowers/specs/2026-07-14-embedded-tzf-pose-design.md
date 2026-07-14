@@ -36,7 +36,8 @@ Project format advances from version 3 to version 4. Each scan can persist:
 All scans loaded from version 1-3 projects are marked as already considered.
 Their stored transforms are never changed by migration. Existing version 4
 scans and every scan the user has already moved are likewise not automatically
-repositioned.
+repositioned. Their embedded metadata may still be read and persisted so an
+explicit automatic-stitch command can use it without moving the saved scene.
 
 For a newly imported scan, pose metadata is read before the cloud is first
 shown. If it is the first valid pose in a new compatible sequence, it stays at
@@ -55,6 +56,10 @@ Automatic stitching starts from the current project placement, which now
 usually reflects the embedded X7 pose. The existing bounded local refinement
 may correct the placement only within its safety limits. RMS, P95, overlap,
 consistency, ambiguity, and correction bounds remain hard acceptance gates.
+For a legacy pair whose saved transforms were preserved, the command constructs
+the same initial hypothesis directly from both embedded poses. This hypothesis
+is previewed as a candidate and does not change the project until the user
+accepts it.
 
 On successful refinement the refined transform is committed. On rejection the
 exact input transform remains unchanged and the UI reports the strongest

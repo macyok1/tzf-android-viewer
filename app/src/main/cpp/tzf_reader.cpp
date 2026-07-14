@@ -51,6 +51,9 @@ extern "C" JNIEXPORT jlong JNICALL
 Java_ru_tzfviewer_TzfNative_previewSessionSourcePointCount(JNIEnv* env,jclass,jlong handle){try{return static_cast<jlong>(requirePreview(handle)->sourcePointCount());}catch(const std::exception& e){throwIOException(env,e.what());return 0;}}
 
 extern "C" JNIEXPORT jfloatArray JNICALL
+Java_ru_tzfviewer_TzfNative_previewSessionInitialPose(JNIEnv* env,jclass,jlong handle){try{const auto session=requirePreview(handle);const auto size=session->hasInitialPose()?4:0;const auto out=env->NewFloatArray(size);if(out!=nullptr&&size==4){const auto pose=session->initialPose();env->SetFloatArrayRegion(out,0,4,pose.data());}return out;}catch(const std::exception& e){throwIOException(env,e.what());return nullptr;}}
+
+extern "C" JNIEXPORT jfloatArray JNICALL
 Java_ru_tzfviewer_TzfNative_nextPreviewChunk(JNIEnv* env,jclass,jlong handle,jint maxPoints){try{if(maxPoints<=0)throw std::runtime_error("invalid chunk limit");const auto chunk=requirePreview(handle)->nextChunk(static_cast<std::uint32_t>(maxPoints));const auto out=env->NewFloatArray(static_cast<jsize>(chunk.size()));if(out!=nullptr&&!chunk.empty())env->SetFloatArrayRegion(out,0,static_cast<jsize>(chunk.size()),chunk.data());return out;}catch(const std::exception& e){throwIOException(env,e.what());return nullptr;}}
 
 extern "C" JNIEXPORT void JNICALL

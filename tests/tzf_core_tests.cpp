@@ -9,6 +9,8 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <cstring>
+#include <limits>
 #include <string>
 #include <cmath>
 #include <vector>
@@ -57,9 +59,44 @@ std::filesystem::path writeFixture() {
     return path;
 }
 
+std::filesystem::path writeRegistrationFixture(bool finite = true) {
+    std::vector<std::uint8_t> bytes(320, 0);
+    const std::uint64_t scanInfoOffset = 64;
+    const std::array<double, 12> values{
+        -0.9969030212, -0.0459054694, 0.0638518145,
+         0.0435531511, -0.9983373692, -0.0377573872,
+         0.0654789231, -0.0348595057, 0.9972448674,
+         finite ? 1500.0 : std::numeric_limits<double>::quiet_NaN(),
+         1500.0, 0.0};
+    std::memcpy(bytes.data() + scanInfoOffset + 0x44, values.data(),
+                values.size() * sizeof(double));
+    const auto path = std::filesystem::temp_directory_path() /
+        (finite ? "tzf-registration-test.bin" : "tzf-registration-invalid-test.bin");
+    std::ofstream output(path, std::ios::binary | std::ios::trunc);
+    output.write(reinterpret_cast<const char*>(bytes.data()),
+                 static_cast<std::streamsize>(bytes.size()));
+    return path;
+}
+
 } // namespace
 
 int main() {
+    {
+        const auto registrationPath = writeRegistrationFixture();
+        tzf::BinaryFile registrationFile(registrationPath);
+        const auto registration = tzf::parseRegistrationInformation(
+            registrationFile, 64);
+        assert(registration.valid);
+        assert(std::abs(registration.translation[0] - 1500.0) < 1e-9);
+        assert(std::abs(registration.yawDegrees - (-177.364)) < 0.01);
+        std::filesystem::remove(registrationPath);
+
+        const auto invalidPath = writeRegistrationFixture(false);
+        tzf::BinaryFile invalidFile(invalidPath);
+        assert(!tzf::parseRegistrationInformation(invalidFile, 64).valid);
+        std::filesystem::remove(invalidPath);
+    }
+
     const tzf::SphericalPoint spherical{16861.1F, 2.5112741F,
                                         0.001558F};
     const auto xyz = tzf::sphericalToXyz(spherical);

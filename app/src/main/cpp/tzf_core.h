@@ -105,6 +105,8 @@ public:
     [[nodiscard]] bool finished() const noexcept;
     [[nodiscard]] std::uint64_t sourcePointCount() const noexcept { return scanInfo_.validPointCount; }
     [[nodiscard]] std::uint32_t preparedPointCount() const noexcept { return emittedPoints_; }
+    [[nodiscard]] std::array<float, 4> initialPose() const noexcept;
+    [[nodiscard]] bool hasInitialPose() const noexcept { return registration_.valid; }
 private:
     BinaryFile file_;
     FileHeader fileHeader_;

@@ -6,7 +6,7 @@ import java.util.List;
 import java.util.UUID;
 
 final class ProjectModel {
-    static final int FORMAT_VERSION = 3;
+    static final int FORMAT_VERSION = 4;
     final String id;
     String name;
     long createdAt;
@@ -61,6 +61,9 @@ final class ProjectModel {
         String uri = "";
         int color = 0xff38c9e8;
         long sourcePointCount;
+        boolean embeddedPoseValid;
+        boolean embeddedPoseApplied;
+        final float[] embeddedPose = new float[4];
         transient int loadState=WAITING;
         transient String loadError="";
         Scan(String id, String name) { super(id,name); }
@@ -103,5 +106,43 @@ final class ProjectModel {
     static float[] relative(float[] parentWorld,float[] childWorld){
         float dx=childWorld[0]-parentWorld[0],dy=childWorld[1]-parentWorld[1];double r=Math.toRadians(-parentWorld[3]);float c=(float)Math.cos(r),s=(float)Math.sin(r);
         return new float[]{c*dx-s*dy,s*dx+c*dy,childWorld[2]-parentWorld[2],ViewCubeMath.normalizeYaw(childWorld[3]-parentWorld[3])};
+    }
+
+    boolean initializeEmbeddedPose(Scan scan,float[] pose){
+        if(scan==null)return false;
+        if(scan.embeddedPoseApplied){
+            if(scan.embeddedPoseValid||!validPose(pose))return false;
+            scan.embeddedPoseValid=true;
+            System.arraycopy(pose,0,scan.embeddedPose,0,4);
+            return true;
+        }
+        scan.embeddedPoseApplied=true;
+        if(!validPose(pose))return true;
+        scan.embeddedPoseValid=true;
+        System.arraycopy(pose,0,scan.embeddedPose,0,4);
+        Scan anchor=findEmbeddedPoseAnchor(root,scan);
+        if(anchor==null){
+            if(root.scanCount()==1) return true;
+            return true;
+        }
+        float[] offset=relative(anchor.embeddedPose,scan.embeddedPose);
+        float[] requestedWorld=compose(anchor.worldTransform(),offset);
+        float[] local=relative(scan.parent().worldTransform(),requestedWorld);
+        System.arraycopy(local,0,scan.transform,0,4);
+        return true;
+    }
+
+    private static Scan findEmbeddedPoseAnchor(Group group,Scan excluded){
+        for(Node node:group.children){
+            if(node instanceof Scan){Scan scan=(Scan)node;if(scan!=excluded&&scan.embeddedPoseValid&&scan.embeddedPoseApplied)return scan;}
+            else {Scan found=findEmbeddedPoseAnchor((Group)node,excluded);if(found!=null)return found;}
+        }
+        return null;
+    }
+
+    private static boolean validPose(float[] pose){
+        if(pose==null||pose.length!=4)return false;
+        for(float value:pose)if(!Float.isFinite(value))return false;
+        return true;
     }
 }
