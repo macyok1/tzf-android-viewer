@@ -9,9 +9,9 @@
             android:grantUriPermissions="true">
             <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/update_paths" />
         </provider>
-        <activity android:name=".MainActivity" android:screenOrientation="portrait" android:exported="false" />
-        <activity android:name=".SettingsActivity" android:screenOrientation="portrait" android:exported="false" />
-        <activity android:name=".ProjectsActivity" android:screenOrientation="portrait" android:exported="true">
+        <activity android:name=".MainActivity" android:exported="false" />
+        <activity android:name=".SettingsActivity" android:exported="false" />
+        <activity android:name=".ProjectsActivity" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

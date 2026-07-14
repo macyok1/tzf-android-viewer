@@ -62,7 +62,7 @@ public final class OrientationCubeView extends View {
         float[] eye = ViewCubeMath.eyeDirection(yaw, pitch);
         float[] right = normalize(new float[]{-eye[1], eye[0], 0f});
         float[] up = normalize(cross(eye, right));
-        float size = Math.min(getWidth(), getHeight()) * .32f;
+        float size = Math.min(getWidth(), getHeight()) * .245f;
         float cx = getWidth() * .5f, cy = getHeight() * .5f;
         for (int i = 0; i < FACE_DATA.length; i++) {
             int[] d = FACE_DATA[i];
@@ -98,7 +98,7 @@ public final class OrientationCubeView extends View {
         float area = Math.abs(cross2(face.x[1]-face.x[0], face.y[1]-face.y[0], face.x[3]-face.x[0], face.y[3]-face.y[0]));
         if (area > getWidth() * getHeight() * .025f) {
             paint.setStyle(Paint.Style.FILL); paint.setColor(Color.WHITE); paint.setTextAlign(Paint.Align.CENTER);
-            paint.setTextSize(Math.max(10f, Math.min(getWidth(), getHeight()) * .105f));
+            paint.setTextSize(Math.max(10f, Math.min(getWidth(), getHeight()) * .082f));
             canvas.drawText(LABELS[face.index], average(face.x), average(face.y) - (paint.ascent()+paint.descent())*.5f, paint);
         }
     }

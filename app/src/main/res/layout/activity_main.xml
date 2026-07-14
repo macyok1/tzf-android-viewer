@@ -4,20 +4,23 @@
 
     <FrameLayout android:id="@+id/viewportContainer" android:layout_width="match_parent" android:layout_height="match_parent" />
 
-    <LinearLayout android:layout_width="match_parent" android:layout_height="48dp" android:gravity="center_vertical"
+    <LinearLayout android:id="@+id/appBar" android:layout_width="match_parent" android:layout_height="52dp" android:gravity="center_vertical"
         android:paddingHorizontal="12dp" android:background="@color/panel" android:elevation="8dp">
         <Button android:id="@+id/backToProjects" style="@style/CompactTool" android:layout_width="44dp" android:layout_height="44dp" android:text="←" android:contentDescription="К проектам" />
         <TextView android:id="@+id/projectTitle" android:layout_width="0dp" android:layout_height="match_parent"
             android:layout_weight="1" android:gravity="center_vertical" android:textColor="@color/text_primary"
             android:textSize="18sp" android:textStyle="bold" />
         <TextView android:layout_width="wrap_content" android:layout_height="32dp" android:gravity="center"
-            android:paddingHorizontal="10dp" android:text="СШИВКА" android:textColor="@color/cyan"
+            android:paddingHorizontal="10dp" android:text="3D" android:textStyle="bold" android:textColor="@color/cyan"
             android:background="@color/ink" />
     </LinearLayout>
 
-    <LinearLayout android:id="@+id/compactTools" android:layout_width="44dp" android:layout_height="wrap_content"
+    <ScrollView android:id="@+id/compactTools" android:layout_width="52dp" android:layout_height="match_parent"
         android:layout_gravity="top|start" android:layout_marginStart="8dp" android:layout_marginTop="56dp"
-        android:orientation="vertical" android:background="@color/panel" android:elevation="7dp">
+        android:layout_marginBottom="62dp" android:fillViewport="false" android:scrollbars="none"
+        android:background="@color/panel" android:elevation="7dp">
+      <LinearLayout android:id="@+id/toolButtons" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="vertical">
         <Button android:id="@+id/scanX7" style="@style/CompactTool" android:layout_width="44dp" android:layout_height="44dp" android:text="X7" android:textSize="11sp" android:contentDescription="Сканировать Trimble X7"/>
         <Button android:id="@+id/compactOpen" style="@style/CompactTool" android:layout_width="44dp" android:layout_height="44dp" android:text="＋" android:contentDescription="Добавить TZF"/>
         <Button android:id="@+id/saveProject" style="@style/CompactTool" android:layout_width="44dp" android:layout_height="44dp" android:text="▣" android:contentDescription="Сохранить проект"/>
@@ -30,11 +33,12 @@
         <Button android:id="@+id/section" style="@style/CompactTool" android:layout_width="44dp" android:layout_height="44dp" android:text="CUT" android:textSize="9sp" android:contentDescription="Сечение"/>
         <Button android:id="@+id/pointSize" style="@style/CompactTool" android:layout_width="44dp" android:layout_height="44dp" android:text="•• 2" android:textSize="10sp" android:contentDescription="Размер точек"/>
         <Button android:id="@+id/pointBudget" style="@style/CompactTool" android:layout_width="44dp" android:layout_height="44dp" android:text="150k" android:textSize="10sp" android:contentDescription="Количество точек"/>
-        <Button android:id="@+id/moreTools" style="@style/CompactTool" android:layout_width="44dp" android:layout_height="44dp" android:text="⋯" android:contentDescription="Меню сшивки"/>
-    </LinearLayout>
+        <Button android:id="@+id/moreTools" style="@style/CompactTool" android:layout_width="44dp" android:layout_height="44dp" android:text="⋯" android:contentDescription="Меню инструментов"/>
+      </LinearLayout>
+    </ScrollView>
 
-    <ru.tzfviewer.OrientationCubeView android:id="@+id/orientation" android:layout_width="96dp" android:layout_height="96dp"
-        android:layout_gravity="top|end" android:layout_marginTop="58dp" android:layout_marginEnd="10dp" />
+    <ru.tzfviewer.OrientationCubeView android:id="@+id/orientation" android:layout_width="132dp" android:layout_height="108dp"
+        android:layout_gravity="top|end" android:layout_marginTop="60dp" android:layout_marginEnd="12dp" />
 
     <TextView android:id="@+id/status" android:layout_width="wrap_content" android:layout_height="wrap_content"
         android:layout_gravity="bottom|start" android:layout_marginStart="60dp" android:layout_marginBottom="64dp"
@@ -53,7 +57,7 @@
         </LinearLayout>
     </LinearLayout>
 
-    <LinearLayout android:id="@+id/pairCard" android:layout_width="match_parent" android:layout_height="54dp"
+    <LinearLayout android:id="@+id/pairCard" android:layout_width="match_parent" android:layout_height="50dp"
         android:layout_gravity="bottom" android:layout_margin="8dp" android:orientation="horizontal"
         android:gravity="center_vertical" android:paddingHorizontal="6dp" android:background="@color/panel" android:elevation="8dp">
         <TextView android:id="@+id/referenceLabel" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1"
