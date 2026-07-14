@@ -71,6 +71,31 @@ std::vector<tzf::Point> decodeRegistrationPoints(const std::string& path,
         file, header, scan, directory, limit, 1).xyz);
 }
 
+jobject makeRegistrationResult(JNIEnv* env,
+                               const tzf::RegistrationResult& result) {
+    const auto resultClass =
+        env->FindClass("ru/tzfviewer/RegistrationResult");
+    if (resultClass == nullptr) return nullptr;
+    const auto constructor = env->GetMethodID(
+        resultClass, "<init>",
+        "(ZDDDDDDDILjava/lang/String;[F)V");
+    if (constructor == nullptr) return nullptr;
+    std::array<float, 4> transform{};
+    std::transform(result.transform.begin(), result.transform.end(),
+                   transform.begin(), [](double value) {
+                       return static_cast<float>(value);
+                   });
+    const auto transformArray = env->NewFloatArray(4);
+    if (transformArray == nullptr) return nullptr;
+    env->SetFloatArrayRegion(transformArray, 0, 4, transform.data());
+    const auto reason = env->NewStringUTF(result.reason.c_str());
+    return env->NewObject(
+        resultClass, constructor, static_cast<jboolean>(result.accepted),
+        result.rms, result.p95, result.overlap, result.consistency,
+        result.confidence, result.correctionTranslation, result.correctionYaw,
+        static_cast<jint>(result.iterations), reason, transformArray);
+}
+
 } // namespace
 
 extern "C" JNIEXPORT jfloatArray JNICALL
@@ -148,30 +173,15 @@ Java_ru_tzfviewer_TzfNative_registerScans(JNIEnv* env, jclass,
         tzf::RegistrationOptions options;
         options.rmsLimit = rmsLimit;
         options.p95Limit = p95Limit;
+        options.maximumInitialTranslationMeters = 2000.0;
+        options.maximumInitialTranslationRatio = .10;
+        options.maximumInitialYawDelta = 10.0;
         options.cancellation = &registrationCancelled;
         const auto result = tzf::registerConstrained(
             decodeRegistrationPoints(reference, 400000),
             decodeRegistrationPoints(moving, 400000), initial, options);
 
-        const auto resultClass = env->FindClass("ru/tzfviewer/RegistrationResult");
-        if (resultClass == nullptr) return nullptr;
-        const auto constructor = env->GetMethodID(
-            resultClass, "<init>", "(ZDDDILjava/lang/String;[F)V");
-        if (constructor == nullptr) return nullptr;
-        std::array<float, 4> transform{};
-        std::transform(result.transform.begin(), result.transform.end(),
-                       transform.begin(), [](double value) {
-                           return static_cast<float>(value);
-                       });
-        const auto transformArray = env->NewFloatArray(4);
-        if (transformArray == nullptr) return nullptr;
-        env->SetFloatArrayRegion(transformArray, 0, 4, transform.data());
-        const auto reason = env->NewStringUTF(result.reason.c_str());
-        return env->NewObject(resultClass, constructor,
-                              static_cast<jboolean>(result.accepted),
-                              result.rms, result.p95, result.overlap,
-                              static_cast<jint>(result.iterations), reason,
-                              transformArray);
+        return makeRegistrationResult(env, result);
     } catch (const std::exception& error) {
         if (referenceChars != nullptr)
             env->ReleaseStringUTFChars(referencePath, referenceChars);
@@ -204,14 +214,9 @@ Java_ru_tzfviewer_TzfNative_registerPointClouds(JNIEnv* env, jclass,
         if (env->ExceptionCheck()) return nullptr;
         std::array<double,4> initial{}; std::copy(initialFloats.begin(),initialFloats.end(),initial.begin());
         registrationCancelled.store(false);
-        tzf::RegistrationOptions options; options.rmsLimit=rmsLimit; options.p95Limit=p95Limit;options.maximumInitialTranslationRatio=.25;options.maximumInitialYawDelta=15.0;options.cancellation=&registrationCancelled;
+        tzf::RegistrationOptions options; options.rmsLimit=rmsLimit; options.p95Limit=p95Limit;options.maximumInitialTranslationMeters=2000.0;options.maximumInitialTranslationRatio=.10;options.maximumInitialYawDelta=10.0;options.cancellation=&registrationCancelled;
         const auto result=tzf::registerConstrained(tzf::xyzToPoints(reference),tzf::xyzToPoints(moving),initial,options);
-        const auto resultClass=env->FindClass("ru/tzfviewer/RegistrationResult"); if(resultClass==nullptr)return nullptr;
-        const auto constructor=env->GetMethodID(resultClass,"<init>","(ZDDDILjava/lang/String;[F)V"); if(constructor==nullptr)return nullptr;
-        std::array<float,4> transform{};std::transform(result.transform.begin(),result.transform.end(),transform.begin(),[](double v){return static_cast<float>(v);});
-        const auto transformArray=env->NewFloatArray(4);if(transformArray==nullptr)return nullptr;env->SetFloatArrayRegion(transformArray,0,4,transform.data());
-        const auto reason=env->NewStringUTF(result.reason.c_str());
-        return env->NewObject(resultClass,constructor,static_cast<jboolean>(result.accepted),result.rms,result.p95,result.overlap,static_cast<jint>(result.iterations),reason,transformArray);
+        return makeRegistrationResult(env,result);
     } catch(const std::exception& error){throwIOException(env,error.what());return nullptr;}
 }
 
@@ -234,12 +239,7 @@ Java_ru_tzfviewer_TzfNative_registerPointCloudsGlobal(JNIEnv* env, jclass,
         registrationCancelled.store(false);
         tzf::GlobalRegistrationOptions options;options.refinement.rmsLimit=rmsLimit;options.refinement.p95Limit=p95Limit;options.refinement.cancellation=&registrationCancelled;
         const auto result=tzf::registerGlobalConstrained(tzf::xyzToPoints(reference),tzf::xyzToPoints(moving),options);
-        const auto resultClass=env->FindClass("ru/tzfviewer/RegistrationResult");if(resultClass==nullptr)return nullptr;
-        const auto constructor=env->GetMethodID(resultClass,"<init>","(ZDDDILjava/lang/String;[F)V");if(constructor==nullptr)return nullptr;
-        std::array<float,4> transform{};std::transform(result.transform.begin(),result.transform.end(),transform.begin(),[](double v){return static_cast<float>(v);});
-        const auto transformArray=env->NewFloatArray(4);if(transformArray==nullptr)return nullptr;env->SetFloatArrayRegion(transformArray,0,4,transform.data());
-        const auto reason=env->NewStringUTF(result.reason.c_str());
-        return env->NewObject(resultClass,constructor,static_cast<jboolean>(result.accepted),result.rms,result.p95,result.overlap,static_cast<jint>(result.iterations),reason,transformArray);
+        return makeRegistrationResult(env,result);
     }catch(const std::exception& error){throwIOException(env,error.what());return nullptr;}
 }
 
@@ -249,5 +249,5 @@ Java_ru_tzfviewer_TzfNative_cancelRegistration(JNIEnv*,jclass){registrationCance
 extern "C" JNIEXPORT jfloatArray JNICALL
 Java_ru_tzfviewer_TzfNative_optimizePoseGraph(JNIEnv* env,jclass,jfloatArray initialPoses,jfloatArray encodedEdges,jint fixedStation){
     if(initialPoses==nullptr||encodedEdges==nullptr||env->GetArrayLength(initialPoses)%4!=0||env->GetArrayLength(encodedEdges)%7!=0){throwIOException(env,"invalid pose graph arrays");return nullptr;}
-    try{std::vector<float> posesRaw((std::size_t)env->GetArrayLength(initialPoses)),edgesRaw((std::size_t)env->GetArrayLength(encodedEdges));env->GetFloatArrayRegion(initialPoses,0,(jsize)posesRaw.size(),posesRaw.data());env->GetFloatArrayRegion(encodedEdges,0,(jsize)edgesRaw.size(),edgesRaw.data());if(env->ExceptionCheck())return nullptr;std::vector<std::array<double,4>> poses(posesRaw.size()/4);for(std::size_t i=0;i<poses.size();++i)for(int j=0;j<4;++j)poses[i][j]=posesRaw[i*4+j];std::vector<tzf::PoseGraphEdge> edges;edges.reserve(edgesRaw.size()/7);for(std::size_t i=0;i<edgesRaw.size();i+=7){tzf::PoseGraphEdge edge;edge.reference=(std::size_t)edgesRaw[i];edge.moving=(std::size_t)edgesRaw[i+1];for(int j=0;j<4;++j)edge.relative[j]=edgesRaw[i+2+j];edge.weight=edgesRaw[i+6];edges.push_back(edge);}tzf::PoseGraphOptions options;options.cancellation=&registrationCancelled;registrationCancelled.store(false);auto result=tzf::optimizePoseGraph(poses.size(),(std::size_t)fixedStation,poses,edges,options);if(!result.accepted){throwIOException(env,result.reason.c_str());return nullptr;}std::vector<float> flattened(result.poses.size()*4);for(std::size_t i=0;i<result.poses.size();++i)for(int j=0;j<4;++j)flattened[i*4+j]=(float)result.poses[i][j];jfloatArray output=env->NewFloatArray((jsize)flattened.size());if(output!=nullptr)env->SetFloatArrayRegion(output,0,(jsize)flattened.size(),flattened.data());return output;}catch(const std::exception& error){throwIOException(env,error.what());return nullptr;}
+    try{std::vector<float> posesRaw((std::size_t)env->GetArrayLength(initialPoses)),edgesRaw((std::size_t)env->GetArrayLength(encodedEdges));env->GetFloatArrayRegion(initialPoses,0,(jsize)posesRaw.size(),posesRaw.data());env->GetFloatArrayRegion(encodedEdges,0,(jsize)edgesRaw.size(),edgesRaw.data());if(env->ExceptionCheck())return nullptr;std::vector<std::array<double,4>> poses(posesRaw.size()/4);for(std::size_t i=0;i<poses.size();++i)for(int j=0;j<4;++j)poses[i][j]=posesRaw[i*4+j];std::vector<tzf::PoseGraphEdge> edges;edges.reserve(edgesRaw.size()/7);for(std::size_t i=0;i<edgesRaw.size();i+=7){tzf::PoseGraphEdge edge;edge.reference=(std::size_t)edgesRaw[i];edge.moving=(std::size_t)edgesRaw[i+1];for(int j=0;j<4;++j)edge.relative[j]=edgesRaw[i+2+j];edge.weight=edgesRaw[i+6];edges.push_back(edge);}tzf::PoseGraphOptions options;options.robustTranslationScale=50.0;options.maximumEdgeResidual=150.0;options.maximumMeanEdgeResidual=50.0;options.cancellation=&registrationCancelled;registrationCancelled.store(false);auto result=tzf::optimizePoseGraph(poses.size(),(std::size_t)fixedStation,poses,edges,options);if(!result.accepted){throwIOException(env,result.reason.c_str());return nullptr;}std::vector<float> flattened(result.poses.size()*4);for(std::size_t i=0;i<result.poses.size();++i)for(int j=0;j<4;++j)flattened[i*4+j]=(float)result.poses[i][j];jfloatArray output=env->NewFloatArray((jsize)flattened.size());if(output!=nullptr)env->SetFloatArrayRegion(output,0,(jsize)flattened.size(),flattened.data());return output;}catch(const std::exception& error){throwIOException(env,error.what());return nullptr;}
 }

@@ -177,8 +177,13 @@ int main() {
     warningOptions.p95Limit = 1e-12;
     const auto warning = tzf::registerConstrained(
         reference, moving, {0.10, -0.04, 0.02, 4.0}, warningOptions);
-    assert(warning.accepted);
-    assert(warning.reason.starts_with("quality warning:"));
+    assert(!warning.accepted);
+    assert(warning.reason == "RMS exceeds threshold" ||
+           warning.reason == "P95 exceeds threshold");
+    assert(std::abs(warning.transform[0] - 0.10) < 1e-12);
+    assert(std::abs(warning.transform[1] + 0.04) < 1e-12);
+    assert(std::abs(warning.transform[2] - 0.02) < 1e-12);
+    assert(std::abs(warning.transform[3] - 4.0) < 1e-12);
 
     auto guardedOptions = registrationOptions;
     guardedOptions.maximumInitialTranslationRatio = 0.001;
@@ -188,6 +193,10 @@ int main() {
     assert(!guarded.accepted);
     assert(guarded.reason == "local refinement moved too far" ||
            guarded.reason == "local refinement rotated too far");
+    assert(std::abs(guarded.transform[0]) < 1e-12);
+    assert(std::abs(guarded.transform[1]) < 1e-12);
+    assert(std::abs(guarded.transform[2]) < 1e-12);
+    assert(std::abs(guarded.transform[3]) < 1e-12);
 
     const auto rejected = tzf::registerConstrained(
         std::vector<tzf::Point>(20), std::vector<tzf::Point>(20), {});
@@ -213,6 +222,14 @@ int main() {
     std::vector<tzf::PoseGraphEdge> graphEdges{{0,1,{1,0,0,0},1},{1,2,{1,0,0,0},1},{0,2,{2,0,0,0},1}};
     const auto graph=tzf::optimizePoseGraph(3,0,graphInitial,graphEdges);
     assert(graph.accepted); assert(std::abs(graph.poses[1][0]-1)<.01); assert(std::abs(graph.poses[2][0]-2)<.01);
+
+    auto inconsistentEdges = graphEdges;
+    inconsistentEdges[2].relative = {9, 0, 0, 0};
+    const auto inconsistent =
+        tzf::optimizePoseGraph(3, 0, graphInitial, inconsistentEdges);
+    assert(!inconsistent.accepted);
+    assert(inconsistent.reason == "inconsistent pose graph");
+    assert(inconsistent.poses == graphInitial);
 
     std::filesystem::remove(path);
     return 0;

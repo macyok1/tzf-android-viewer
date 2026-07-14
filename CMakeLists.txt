@@ -15,6 +15,9 @@ endif()
 add_executable(tzf-cli tools/tzf_cli.cpp)
 target_link_libraries(tzf-cli PRIVATE tzf-core)
 
+add_executable(tzf-registration-cli tools/tzf_registration_cli.cpp)
+target_link_libraries(tzf-registration-cli PRIVATE tzf-core)
+
 include(CTest)
 if(BUILD_TESTING)
     add_executable(tzf-core-tests tests/tzf_core_tests.cpp)

@@ -30,6 +30,21 @@ std::int32_t readI32(const std::uint8_t* p) {
     return value;
 }
 
+double readDouble(const std::uint8_t* p) {
+    double value{};
+    std::memcpy(&value, p, sizeof(value));
+    return value;
+}
+
+Point applyLeveling(Point point, const RegistrationInformation& registration) {
+    if (!registration.valid) return point;
+    const auto& m = registration.leveling;
+    return {
+        static_cast<float>(m[0] * point.x + m[1] * point.y + m[2] * point.z),
+        static_cast<float>(m[3] * point.x + m[4] * point.y + m[5] * point.z),
+        static_cast<float>(m[6] * point.x + m[7] * point.y + m[8] * point.z)};
+}
+
 bool rangeFits(std::uint64_t offset, std::uint64_t length,
                std::uint64_t total) {
     return offset <= total && length <= total - offset;
@@ -169,6 +184,50 @@ ScanInfo parseScanInfo(BinaryFile& file, std::uint64_t scanInfoOffset) {
         throw std::runtime_error("invalid TZF scan dimensions");
     }
     return info;
+}
+
+RegistrationInformation parseRegistrationInformation(
+    BinaryFile& file, std::uint64_t scanInfoOffset) {
+    constexpr std::uint64_t registrationOffset = 0x44;
+    constexpr std::uint64_t registrationSize = 12 * sizeof(double);
+    RegistrationInformation result;
+    if (scanInfoOffset > file.size() ||
+        registrationOffset + registrationSize > file.size() - scanInfoOffset) {
+        return result;
+    }
+    const auto bytes = file.read(scanInfoOffset + registrationOffset,
+                                 registrationSize);
+    for (std::size_t i = 0; i < 9; ++i)
+        result.orientation[i] = readDouble(bytes.data() + i * sizeof(double));
+    for (std::size_t i = 0; i < 3; ++i)
+        result.translation[i] =
+            readDouble(bytes.data() + (9 + i) * sizeof(double));
+    for (double value : result.orientation)
+        if (!std::isfinite(value)) return RegistrationInformation{};
+    for (double value : result.translation)
+        if (!std::isfinite(value)) return RegistrationInformation{};
+    const auto axisLength = [&](int offset) {
+        return std::sqrt(result.orientation[offset] * result.orientation[offset] +
+                         result.orientation[offset + 1] * result.orientation[offset + 1] +
+                         result.orientation[offset + 2] * result.orientation[offset + 2]);
+    };
+    for (int offset : {0, 3, 6}) {
+        const double length = axisLength(offset);
+        if (length < .8 || length > 1.2) return RegistrationInformation{};
+    }
+    result.yawDegrees = std::atan2(result.orientation[1],
+                                   result.orientation[0]) *
+                        180.0 / 3.14159265358979323846;
+    const double radians = result.yawDegrees *
+                           3.14159265358979323846 / 180.0;
+    const double c = std::cos(radians), s = std::sin(radians);
+    const auto& r = result.orientation;
+    result.leveling = {
+        c*r[0]+s*r[1], c*r[3]+s*r[4], c*r[6]+s*r[7],
+       -s*r[0]+c*r[1],-s*r[3]+c*r[4],-s*r[6]+c*r[7],
+        r[2],           r[5],           r[8]};
+    result.valid = true;
+    return result;
 }
 
 std::vector<std::uint8_t> BinaryFile::read(std::uint64_t offset,
@@ -487,7 +546,8 @@ std::vector<SphericalPoint> decodeSphericalLine(
     BinaryFile& file, const FileHeader& fileHeader,
     const ScanInfo& scanInfo, const BlockDirectory& directory,
     std::uint32_t lineIndex) {
-    (void)fileHeader;
+    const auto registration =
+        parseRegistrationInformation(file, fileHeader.scanInfoOffset);
     if (scanInfo.tileSize != 512) {
         throw std::runtime_error("unsupported TZF tile size");
     }
@@ -499,7 +559,8 @@ PointCloudPreview decodePointCloudPreview(
     BinaryFile& file, const FileHeader& fileHeader,
     const ScanInfo& scanInfo, const BlockDirectory& directory,
     std::uint32_t maxPoints, std::uint32_t tileStride) {
-    (void)fileHeader;
+    const auto registration = parseRegistrationInformation(
+        file, fileHeader.scanInfoOffset);
     constexpr std::uint32_t tileSize = 512;
     if (scanInfo.tileSize != tileSize || maxPoints == 0 || tileStride == 0) {
         throw std::runtime_error("unsupported TZF preview request");
@@ -569,7 +630,8 @@ PointCloudPreview decodePointCloudPreview(
                         static_cast<float>(readI32(channels[1].data() +
                                                    valueIndex * 4U)) /
                             headers[1].scale};
-                    const auto point = sphericalToXyz(spherical);
+                    const auto point = applyLeveling(
+                        sphericalToXyz(spherical), registration);
                     if (!std::isfinite(point.x) || !std::isfinite(point.y) ||
                         !std::isfinite(point.z)) continue;
                     preview.xyz.insert(preview.xyz.end(),
@@ -585,6 +647,8 @@ PointCloudPreview decodePointCloudPreview(
 PreviewSession::PreviewSession(const std::filesystem::path& path)
     : file_(path), fileHeader_(parseFileHeader(file_)),
       scanInfo_(parseScanInfo(file_, fileHeader_.scanInfoOffset)),
+      registration_(parseRegistrationInformation(
+          file_, fileHeader_.scanInfoOffset)),
       directory_(parseBlockDirectory(file_, fileHeader_.blockDirectoryOffset)) {
     const auto validation = validateBlockDirectory(directory_, file_.size());
     if (!validation.empty()) throw std::runtime_error(validation);
@@ -664,7 +728,8 @@ std::vector<float> PreviewSession::nextChunk(std::uint32_t maxPoints) {
                         tileHeaders_[2].scale,
                     static_cast<float>(readI32(tileChannels_[1].data() + valueIndex * 4U)) /
                         tileHeaders_[1].scale};
-                const auto point = sphericalToXyz(spherical);
+                const auto point = applyLeveling(
+                    sphericalToXyz(spherical), registration_);
                 if (!std::isfinite(point.x) || !std::isfinite(point.y) ||
                     !std::isfinite(point.z)) continue;
                 chunk.insert(chunk.end(), {point.x, point.y, point.z});

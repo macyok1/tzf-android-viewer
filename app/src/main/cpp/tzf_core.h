@@ -57,6 +57,14 @@ struct ScanInfo {
     std::uint32_t validPointCount{};
 };
 
+struct RegistrationInformation {
+    std::array<double, 9> orientation{1,0,0,0,1,0,0,0,1};
+    std::array<double, 3> translation{};
+    std::array<double, 9> leveling{1,0,0,0,1,0,0,0,1};
+    double yawDegrees{};
+    bool valid{};
+};
+
 using JpegDecoder = std::function<std::vector<std::uint8_t>(
     const std::vector<std::uint8_t>& jpeg, std::uint32_t expectedWidth,
     std::uint32_t expectedHeight)>;
@@ -101,6 +109,7 @@ private:
     BinaryFile file_;
     FileHeader fileHeader_;
     ScanInfo scanInfo_;
+    RegistrationInformation registration_;
     BlockDirectory directory_;
     std::uint32_t maxPoints_{};
     std::uint32_t emittedPoints_{};
@@ -121,6 +130,8 @@ private:
 [[nodiscard]] FileHeader parseFileHeader(BinaryFile& file);
 [[nodiscard]] ScanInfo parseScanInfo(BinaryFile& file,
                                      std::uint64_t scanInfoOffset);
+[[nodiscard]] RegistrationInformation parseRegistrationInformation(
+    BinaryFile& file, std::uint64_t scanInfoOffset);
 [[nodiscard]] TileHeader parseTileHeader(BinaryFile& file,
                                          const BlockDescriptor& block);
 [[nodiscard]] std::vector<std::uint8_t> decodeSnappy(
