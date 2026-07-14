@@ -176,6 +176,8 @@ Java_ru_tzfviewer_TzfNative_registerScans(JNIEnv* env, jclass,
         tzf::RegistrationOptions options;
         options.rmsLimit = rmsLimit;
         options.p95Limit = p95Limit;
+        options.millimetreScale = 1.0;
+        options.adaptiveResidualLimits = true;
         options.maximumInitialTranslationMeters = 2000.0;
         options.maximumInitialTranslationRatio = .10;
         options.maximumInitialYawDelta = 10.0;
@@ -217,7 +219,7 @@ Java_ru_tzfviewer_TzfNative_registerPointClouds(JNIEnv* env, jclass,
         if (env->ExceptionCheck()) return nullptr;
         std::array<double,4> initial{}; std::copy(initialFloats.begin(),initialFloats.end(),initial.begin());
         registrationCancelled.store(false);
-        tzf::RegistrationOptions options; options.rmsLimit=rmsLimit; options.p95Limit=p95Limit;options.maximumInitialTranslationMeters=2000.0;options.maximumInitialTranslationRatio=.10;options.maximumInitialYawDelta=10.0;options.cancellation=&registrationCancelled;
+        tzf::RegistrationOptions options; options.rmsLimit=rmsLimit; options.p95Limit=p95Limit;options.millimetreScale=1.0;options.adaptiveResidualLimits=true;options.maximumInitialTranslationMeters=2000.0;options.maximumInitialTranslationRatio=.10;options.maximumInitialYawDelta=10.0;options.cancellation=&registrationCancelled;
         const auto result=tzf::registerConstrained(tzf::xyzToPoints(reference),tzf::xyzToPoints(moving),initial,options);
         return makeRegistrationResult(env,result);
     } catch(const std::exception& error){throwIOException(env,error.what());return nullptr;}
@@ -240,7 +242,7 @@ Java_ru_tzfviewer_TzfNative_registerPointCloudsGlobal(JNIEnv* env, jclass,
         env->GetFloatArrayRegion(movingXyz,0,static_cast<jsize>(moving.size()),moving.data());
         if(env->ExceptionCheck())return nullptr;
         registrationCancelled.store(false);
-        tzf::GlobalRegistrationOptions options;options.refinement.rmsLimit=rmsLimit;options.refinement.p95Limit=p95Limit;options.refinement.cancellation=&registrationCancelled;
+        tzf::GlobalRegistrationOptions options;options.refinement.rmsLimit=rmsLimit;options.refinement.p95Limit=p95Limit;options.refinement.millimetreScale=1.0;options.refinement.adaptiveResidualLimits=true;options.refinement.cancellation=&registrationCancelled;
         const auto result=tzf::registerGlobalConstrained(tzf::xyzToPoints(reference),tzf::xyzToPoints(moving),options);
         return makeRegistrationResult(env,result);
     }catch(const std::exception& error){throwIOException(env,error.what());return nullptr;}

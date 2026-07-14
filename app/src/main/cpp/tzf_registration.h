@@ -19,6 +19,8 @@ struct RegistrationOptions {
     double minimumOverlap{0.25};
     double minimumConsistency{0.55};
     double minimumConfidence{73.0};
+    double millimetreScale{.001};
+    bool adaptiveResidualLimits{};
     double maximumInitialTranslationMeters{std::numeric_limits<double>::infinity()};
     double maximumInitialTranslationRatio{std::numeric_limits<double>::infinity()};
     double maximumInitialYawDelta{std::numeric_limits<double>::infinity()};

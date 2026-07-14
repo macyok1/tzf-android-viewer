@@ -61,6 +61,8 @@ int main(int argc, char** argv) {
             tzf::RegistrationOptions options;
             options.rmsLimit = 3.0;
             options.p95Limit = 8.0;
+            options.millimetreScale = 1.0;
+            options.adaptiveResidualLimits = true;
             options.maximumInitialTranslationMeters = 2000.0;
             options.maximumInitialTranslationRatio = .10;
             options.maximumInitialYawDelta = 10.0;
@@ -70,6 +72,8 @@ int main(int argc, char** argv) {
             tzf::GlobalRegistrationOptions options;
             options.refinement.rmsLimit = 3.0;
             options.refinement.p95Limit = 8.0;
+            options.refinement.millimetreScale = 1.0;
+            options.refinement.adaptiveResidualLimits = true;
             result = tzf::registerGlobalConstrained(reference, moving, options);
         }
         std::cout << std::fixed << std::setprecision(9)

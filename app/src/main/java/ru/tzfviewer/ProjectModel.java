@@ -145,4 +145,9 @@ final class ProjectModel {
         for(float value:pose)if(!Float.isFinite(value))return false;
         return true;
     }
+
+    static boolean informativeEmbeddedOffset(float[] offset){
+        return validPose(offset)&&(Math.hypot(offset[0],offset[1])>=20f||
+            Math.abs(offset[2])>=20f||Math.abs(offset[3])>=.25f);
+    }
 }

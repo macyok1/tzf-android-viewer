@@ -82,6 +82,13 @@ public class ProjectModelTest {
         assertTrue(p.initializeEmbeddedPose(scan,new float[]{1500,1500,0,-177}));assertTrue(scan.embeddedPoseValid);assertArrayEquals(new float[]{5,-2,1,30},scan.transform,T);
     }
 
+    @Test public void equalRawX7PosesAreNotARegistrationPrior(){
+        assertFalse(ProjectModel.informativeEmbeddedOffset(new float[4]));
+        assertFalse(ProjectModel.informativeEmbeddedOffset(new float[]{10,-10,5,.1f}));
+        assertTrue(ProjectModel.informativeEmbeddedOffset(new float[]{500,0,0,0}));
+        assertTrue(ProjectModel.informativeEmbeddedOffset(new float[]{0,0,0,12}));
+    }
+
     @Test public void storeSavesLoadsCopiesAndDeletesAtomically()throws Exception{
         java.io.File dir=Files.createTempDirectory("tzf-project-test").toFile();ProjectStore store=new ProjectStore(dir);ProjectModel p=new ProjectModel("abc-1","Original",1);p.root.add(new ProjectModel.Scan("s","Scan"));store.save(p);assertEquals(1,store.list().size());assertEquals(1,store.load(p.id).scanCount());ProjectModel copy=store.copy(p,"Copy",2);assertEquals(2,store.list().size());assertEquals("Copy",copy.name);store.delete(p.id);assertEquals(1,store.list().size());
     }

@@ -145,6 +145,87 @@ Metrics metrics(const std::vector<Vec3>& reference,
     return m;
 }
 
+Metrics surfaceMetrics(const std::vector<Vec3>& reference,
+                       const std::vector<Vec3>& moving, Vec3 pivot,
+                       const std::array<double, 4>& t, double maxDistance,
+                       double rmsLimit, double p95Limit) {
+    Metrics m;
+    if (reference.empty() || moving.empty()) return m;
+    const auto referenceSamples = normals(reference, maxDistance * 1.8);
+    const auto movingSamples = normals(moving, maxDistance * 1.8);
+    std::vector<Vec3> transformed;
+    transformed.reserve(moving.size());
+    for (const auto point : moving)
+        transformed.push_back(transformPoint(point, pivot, t));
+    Index referenceIndex(reference, maxDistance);
+    Index movingIndex(transformed, maxDistance);
+    const double yaw = t[3] * 3.14159265358979323846 / 180.0;
+    const double c = std::cos(yaw), s = std::sin(yaw);
+    const auto rotatedNormal = [&](Vec3 normal) {
+        return Vec3{c * normal.x - s * normal.y,
+                    s * normal.x + c * normal.y, normal.z};
+    };
+    double squaredResiduals = 0;
+    std::size_t forward = 0, backward = 0, reciprocal = 0;
+    for (std::size_t source = 0; source < transformed.size(); ++source) {
+        std::size_t nearest{};
+        double distance2{};
+        if (!referenceIndex.nearest(transformed[source], maxDistance,
+                                    nearest, distance2)) continue;
+        ++forward;
+        std::size_t reverse{};
+        double reverseDistance{};
+        if (movingIndex.nearest(reference[nearest], maxDistance, reverse,
+                               reverseDistance) && reverse == source)
+            ++reciprocal;
+        if (!referenceSamples[nearest].hasNormal) continue;
+        const double residual = std::abs(dot(
+            sub(transformed[source], reference[nearest]),
+            referenceSamples[nearest].normal));
+        m.distances.push_back(residual);
+        squaredResiduals += residual * residual;
+    }
+    for (std::size_t source = 0; source < reference.size(); ++source) {
+        std::size_t nearest{};
+        double distance2{};
+        if (!movingIndex.nearest(reference[source], maxDistance,
+                                 nearest, distance2)) continue;
+        ++backward;
+        if (!movingSamples[nearest].hasNormal) continue;
+        const double residual = std::abs(dot(
+            sub(reference[source], transformed[nearest]),
+            rotatedNormal(movingSamples[nearest].normal)));
+        m.distances.push_back(residual);
+        squaredResiduals += residual * residual;
+    }
+    const double forwardOverlap = static_cast<double>(forward) / moving.size();
+    const double backwardOverlap = static_cast<double>(backward) / reference.size();
+    m.overlap = std::min(forwardOverlap, backwardOverlap);
+    const double maximumOverlap = std::max(forwardOverlap, backwardOverlap);
+    m.overlapBalance = maximumOverlap <= 0 ? 0 : m.overlap / maximumOverlap;
+    m.reciprocalRatio = forward == 0 ? 0 :
+        static_cast<double>(reciprocal) / forward;
+    if (!m.distances.empty()) {
+        m.rms = std::sqrt(squaredResiduals / m.distances.size());
+        std::sort(m.distances.begin(), m.distances.end());
+        m.p95 = m.distances[static_cast<std::size_t>(
+            (m.distances.size() - 1) * .95)];
+        const double median = m.distances[m.distances.size() / 2];
+        m.residualStability = std::clamp(
+            1.0 - (m.p95 - median) / std::max(p95Limit, 1e-9), 0.0, 1.0);
+    }
+    const double rmsQuality = std::clamp(
+        1.0 - m.rms / std::max(rmsLimit, 1e-9), 0.0, 1.0);
+    const double p95Quality = std::clamp(
+        1.0 - m.p95 / std::max(p95Limit, 1e-9), 0.0, 1.0);
+    m.residualQuality = (rmsQuality + p95Quality) * .5;
+    m.consistency =
+        .15 * std::clamp(m.reciprocalRatio, 0.0, 1.0) +
+        .45 * std::clamp(m.overlapBalance, 0.0, 1.0) +
+        .40 * std::clamp(m.residualStability, 0.0, 1.0);
+    return m;
+}
+
 double cloudSpan(const std::vector<Point>& points){Vec3 lo{1e300,1e300,1e300},hi{-1e300,-1e300,-1e300};for(auto p:points){lo.x=std::min(lo.x,(double)p.x);lo.y=std::min(lo.y,(double)p.y);lo.z=std::min(lo.z,(double)p.z);hi.x=std::max(hi.x,(double)p.x);hi.y=std::max(hi.y,(double)p.y);hi.z=std::max(hi.z,(double)p.z);}return std::max({hi.x-lo.x,hi.y-lo.y,hi.z-lo.z});}
 double spanOf(const std::vector<Point>& a,const std::vector<Point>& b){return std::max(cloudSpan(a),cloudSpan(b));}
 
@@ -255,6 +336,82 @@ double projectionScore(const ProjectionGrid& reference,
     return occupancy * (.75 + .25 * height);
 }
 
+std::vector<double> structuralYawCandidates(
+    const std::vector<Vec3>& reference, const std::vector<Vec3>& moving) {
+    constexpr int bins = 72;
+    struct Bin {
+        double minZ{std::numeric_limits<double>::infinity()};
+        double maxZ{-std::numeric_limits<double>::infinity()};
+        double radius{};
+        int count{};
+    };
+    const auto profile = [](const std::vector<Vec3>& points) {
+        std::array<Bin, bins> raw{};
+        for (const auto& point : points) {
+            const double radius = std::hypot(point.x, point.y);
+            if (!std::isfinite(radius) || radius < 1e-6) continue;
+            double angle = std::atan2(point.y, point.x) * 180.0 /
+                           3.14159265358979323846;
+            if (angle < 0) angle += 360.0;
+            const int index = std::min(
+                bins - 1, static_cast<int>(angle / (360.0 / bins)));
+            auto& bin = raw[index];
+            bin.minZ = std::min(bin.minZ, point.z);
+            bin.maxZ = std::max(bin.maxZ, point.z);
+            bin.radius += std::log1p(radius);
+            ++bin.count;
+        }
+        std::array<double, bins> values{};
+        for (int i = 0; i < bins; ++i) {
+            if (raw[i].count < 3) continue;
+            const double vertical = std::max(0.0, raw[i].maxZ - raw[i].minZ);
+            values[i] = std::log1p(vertical) +
+                        .20 * raw[i].radius / raw[i].count;
+        }
+        std::array<double, bins> smooth{};
+        for (int i = 0; i < bins; ++i)
+            smooth[i] = .25 * values[(i + bins - 1) % bins] +
+                        .50 * values[i] + .25 * values[(i + 1) % bins];
+        const double mean = std::accumulate(smooth.begin(), smooth.end(), 0.0) /
+                            bins;
+        double energy = 0;
+        for (double& value : smooth) {
+            value -= mean;
+            energy += value * value;
+        }
+        if (energy > 1e-12) {
+            const double scale = 1.0 / std::sqrt(energy);
+            for (double& value : smooth) value *= scale;
+        }
+        return smooth;
+    };
+    const auto ref = profile(reference), mov = profile(moving);
+    std::vector<std::pair<double, double>> scored;
+    for (int shift = 0; shift < bins; ++shift) {
+        double score = 0;
+        for (int i = 0; i < bins; ++i)
+            score += mov[i] * ref[(i + shift) % bins];
+        double yaw = shift * (360.0 / bins);
+        if (yaw >= 180.0) yaw -= 360.0;
+        scored.push_back({score, yaw});
+    }
+    std::stable_sort(scored.begin(), scored.end(),
+                     [](const auto& a, const auto& b) {
+                         return a.first > b.first;
+                     });
+    std::vector<double> result;
+    for (const auto& [score, yaw] : scored) {
+        if (!std::isfinite(score)) continue;
+        bool separated = true;
+        for (double kept : result)
+            if (std::abs(std::remainder(yaw - kept, 360.0)) < 12.0)
+                separated = false;
+        if (separated) result.push_back(yaw);
+        if (result.size() >= 8) break;
+    }
+    return result;
+}
+
 std::vector<std::array<double, 4>> projectionHypotheses(
     const std::vector<Point>& reference, const std::vector<Point>& moving,
     const GlobalRegistrationOptions& options) {
@@ -272,8 +429,17 @@ std::vector<std::array<double, 4>> projectionHypotheses(
     const auto movingFeatures = projectionFeatures(movingGrid, coarseCell, 128);
     if (referenceFeatures.size() < 8 || movingFeatures.size() < 8) return {};
 
-    std::vector<ProjectionPose> coarseCandidates;
+    std::vector<double> yawCandidates = structuralYawCandidates(
+        coarseReferencePoints, coarseMovingPoints);
     for (double yaw = -180.0; yaw < 180.0; yaw += options.yawStepDegrees) {
+        bool duplicate = false;
+        for (double known : yawCandidates)
+            if (std::abs(std::remainder(yaw - known, 360.0)) < 2.0)
+                duplicate = true;
+        if (!duplicate) yawCandidates.push_back(yaw);
+    }
+    std::vector<ProjectionPose> coarseCandidates;
+    for (double yaw : yawCandidates) {
         if (options.refinement.cancellation &&
             options.refinement.cancellation->load()) return {};
         std::unordered_map<Cell, ProjectionVote, CellHash> votes;
@@ -410,6 +576,98 @@ bool refineIteration(const std::vector<Vec3>& reference,const std::vector<Sample
     const double forwardOverlap=moving.empty()?0.0:static_cast<double>(forwardMatches)/moving.size();const double reciprocalSupport=forwardMatches==0?0.0:static_cast<double>(pairs.size())/forwardMatches;if(pairs.size()<30||forwardOverlap<minimumOverlap||reciprocalSupport<.10)return false;std::sort(pairs.begin(),pairs.end(),[](const auto&a,const auto&b){return a.absolute<b.absolute;});const std::size_t keep=std::max<std::size_t>(30,static_cast<std::size_t>(pairs.size()*.85));double normal[4][4]{},rhs[4]{};for(std::size_t i=0;i<keep;++i){const auto& pair=pairs[i];const double weight=pair.absolute<=voxel?1.0:voxel/pair.absolute;for(int r=0;r<4;++r){rhs[r]+=-weight*pair.jacobian[r]*pair.residual;for(int c=0;c<4;++c)normal[r][c]+=weight*pair.jacobian[r]*pair.jacobian[c];}}if(!solve4(normal,rhs,delta))return false;for(int i=0;i<3;++i)transform[i]+=delta[i];transform[3]+=delta[3]*180.0/3.14159265358979323846;return true;
 }
 
+void estimateCandidateZ(const ProjectionGrid& reference,
+                        const std::vector<Vec3>& moving, Vec3 pivot,
+                        double cellSize, std::array<double, 4>& transform) {
+    std::vector<double> offsets;
+    const std::size_t stride = std::max<std::size_t>(1, moving.size() / 8000);
+    for (std::size_t i = 0; i < moving.size(); i += stride) {
+        const Vec3 point = transformPoint(moving[i], pivot, transform);
+        const Cell key{static_cast<int>(std::floor(point.x / cellSize)),
+                       static_cast<int>(std::floor(point.y / cellSize)), 0};
+        const auto found = reference.find(key);
+        if (found == reference.end() || found->second.count < 2) continue;
+        const double meanZ = found->second.sumZ / found->second.count;
+        offsets.push_back(meanZ - point.z);
+    }
+    if (offsets.size() < 30) return;
+    const auto middle = offsets.begin() + offsets.size() / 2;
+    std::nth_element(offsets.begin(), middle, offsets.end());
+    const double correction = *middle;
+    if (std::isfinite(correction) && std::abs(correction) <= cellSize * 4.0)
+        transform[2] += correction;
+}
+
+double quickHypothesisScore(const Index& referenceIndex,
+                            const std::vector<Vec3>& moving, Vec3 pivot,
+                            const std::array<double, 4>& transform,
+                            double maximumDistance) {
+    if (moving.empty()) return -std::numeric_limits<double>::infinity();
+    const std::size_t stride = std::max<std::size_t>(1, moving.size() / 6000);
+    std::size_t tested = 0, matches = 0;
+    double distance = 0;
+    for (std::size_t i = 0; i < moving.size(); i += stride) {
+        ++tested;
+        std::size_t nearest{};
+        double distance2{};
+        if (!referenceIndex.nearest(
+                transformPoint(moving[i], pivot, transform), maximumDistance,
+                nearest, distance2)) continue;
+        ++matches;
+        distance += std::sqrt(distance2);
+    }
+    if (tested == 0 || matches < 20) return -1;
+    const double overlap = static_cast<double>(matches) / tested;
+    const double meanDistance = distance / matches;
+    return overlap - .30 * meanDistance / maximumDistance;
+}
+
+std::vector<std::array<double, 4>> rankHypotheses(
+    const std::vector<Point>& reference, const std::vector<Point>& moving,
+    std::vector<std::array<double, 4>> hypotheses, double span,
+    double millimetreScale, const std::atomic_bool* cancellation) {
+    if (hypotheses.empty()) return {};
+    const double voxel = std::clamp(
+        span / 100.0, 200.0 * millimetreScale,
+        1000.0 * millimetreScale);
+    const auto coarseReference = downsample(reference, voxel);
+    const auto coarseMoving = downsample(moving, voxel);
+    const Vec3 pivot = center(moving);
+    const Index referenceIndex(coarseReference, voxel);
+    const auto projection = buildProjection(coarseReference, voxel * 1.5);
+    std::vector<std::pair<double, std::array<double, 4>>> scored;
+    scored.reserve(hypotheses.size());
+    for (auto hypothesis : hypotheses) {
+        if (cancellation && cancellation->load()) return {};
+        estimateCandidateZ(projection, coarseMoving, pivot, voxel * 1.5,
+                           hypothesis);
+        const double score = quickHypothesisScore(
+            referenceIndex, coarseMoving, pivot, hypothesis, voxel * 3.0);
+        if (score > .02) scored.push_back({score, hypothesis});
+    }
+    std::stable_sort(scored.begin(), scored.end(),
+                     [](const auto& a, const auto& b) {
+                         return a.first > b.first;
+                     });
+    std::vector<std::array<double, 4>> ranked;
+    for (const auto& [_, hypothesis] : scored) {
+        bool duplicate = false;
+        for (const auto& kept : ranked) {
+            const double dx = hypothesis[0] - kept[0];
+            const double dy = hypothesis[1] - kept[1];
+            const double dz = hypothesis[2] - kept[2];
+            if (std::sqrt(dx * dx + dy * dy + dz * dz) < voxel * 1.5 &&
+                std::abs(std::remainder(hypothesis[3] - kept[3], 360.0)) < 2.0) {
+                duplicate = true;
+                break;
+            }
+        }
+        if (!duplicate) ranked.push_back(hypothesis);
+        if (ranked.size() >= 8) break;
+    }
+    return ranked;
+}
+
 } // namespace
 
 std::vector<Point> xyzToPoints(const std::vector<float>& xyz){std::vector<Point> out;out.reserve(xyz.size()/3);for(std::size_t i=0;i+2<xyz.size();i+=3)out.push_back({xyz[i],xyz[i+1],xyz[i+2]});return out;}
@@ -430,9 +688,16 @@ RegistrationResult registerConstrained(
     const double span = spanOf(reference, moving);
     if (!std::isfinite(span) || span <= 0)
         return reject("invalid cloud bounds");
+    if (!std::isfinite(options.millimetreScale) ||
+        options.millimetreScale <= 0)
+        return reject("invalid registration unit scale");
+    const double mm = options.millimetreScale;
     const Vec3 pivot = center(moving);
-    const std::array<double, 3> voxels{span / 24.0, span / 48.0,
-                                       span / 96.0};
+    const std::array<double, 4> voxels{
+        std::clamp(span / 80.0, 250.0 * mm, 1500.0 * mm),
+        std::clamp(span / 200.0, 100.0 * mm, 500.0 * mm),
+        std::clamp(span / 600.0, 30.0 * mm, 150.0 * mm),
+        std::clamp(span / 1000.0, 20.0 * mm, 120.0 * mm)};
     for (double voxel : voxels) {
         if (options.cancellation && options.cancellation->load())
             return reject("cancelled");
@@ -479,16 +744,27 @@ RegistrationResult registerConstrained(
             }
         }
     }
-    auto controlRef = controlSample(reference, 120000);
-    auto controlMov = controlSample(moving, 120000);
-    auto quality = metrics(controlRef, controlMov, pivot, result.transform,
-                           std::max(options.p95Limit * 4.0, span / 100.0),
-                           options.rmsLimit, options.p95Limit);
+    const double validationVoxel = voxels.back();
+    const double effectiveRmsLimit = options.adaptiveResidualLimits ?
+        std::max(options.rmsLimit,
+                 std::clamp(validationVoxel * .12, 3.0 * mm, 12.0 * mm)) :
+        options.rmsLimit;
+    const double effectiveP95Limit = options.adaptiveResidualLimits ?
+        std::max(options.p95Limit,
+                 std::clamp(validationVoxel * .35, 8.0 * mm, 30.0 * mm)) :
+        options.p95Limit;
+    auto controlRef = downsample(reference, validationVoxel);
+    auto controlMov = downsample(moving, validationVoxel);
+    auto quality = surfaceMetrics(
+        controlRef, controlMov, pivot, result.transform,
+        validationVoxel * 3.0, effectiveRmsLimit, effectiveP95Limit);
+    if (quality.distances.size() < 30)
+        return reject("not enough surface support");
     result.rms = quality.rms;
     result.p95 = quality.p95;
     result.overlap = quality.overlap;
     const double translationScale =
-        std::max(span * .05, options.p95Limit * 10.0);
+        std::max(span * .05, effectiveP95Limit * 10.0);
     const double translationStability = std::clamp(
         1.0 - result.correctionTranslation / translationScale, 0.0, 1.0);
     const double yawStability = std::clamp(
@@ -504,9 +780,9 @@ RegistrationResult registerConstrained(
         return reject("insufficient validation overlap");
     if (result.consistency < options.minimumConsistency)
         return reject("insufficient reciprocal consistency");
-    if (result.rms > options.rmsLimit)
+    if (result.rms > effectiveRmsLimit)
         return reject("RMS exceeds threshold");
-    if (result.p95 > options.p95Limit)
+    if (result.p95 > effectiveP95Limit)
         return reject("P95 exceeds threshold");
     if (result.confidence < options.minimumConfidence)
         return reject("low registration confidence");
@@ -521,13 +797,20 @@ RegistrationResult registerGlobalConstrained(const std::vector<Point>& reference
     const double distinctTranslation=std::max(spanOf(reference,moving)/100.0,options.refinement.p95Limit*2.0);
     RegistrationResult best,second,bestRejected;double bestScore=std::numeric_limits<double>::infinity(),secondScore=bestScore,rejectedScore=-std::numeric_limits<double>::infinity();
     auto hypotheses = projectionHypotheses(reference, moving, options);
-    if (hypotheses.empty()) {
-        hypotheses = planeHypotheses(reference, moving, options);
+    auto planeCandidates = planeHypotheses(reference, moving, options);
+    hypotheses.insert(hypotheses.end(), planeCandidates.begin(),
+                      planeCandidates.end());
+    if (hypotheses.size() < 16) {
         auto featureCandidates = featureHypotheses(reference, moving, options);
         hypotheses.insert(hypotheses.end(), featureCandidates.begin(),
                           featureCandidates.end());
     }
     if(hypotheses.empty()){const Vec3 referenceCenter=center(reference),movingCenter=center(moving),translation=sub(referenceCenter,movingCenter);for(double yaw=-180.0;yaw<180.0;yaw+=options.yawStepDegrees)hypotheses.push_back(pivotTransform(translation,movingCenter,yaw));}
+    auto rankedHypotheses = rankHypotheses(
+        reference, moving, hypotheses, spanOf(reference, moving),
+        options.refinement.millimetreScale,
+        options.refinement.cancellation);
+    if (!rankedHypotheses.empty()) hypotheses = std::move(rankedHypotheses);
     for(const auto& initial:hypotheses){
         if(options.refinement.cancellation&&options.refinement.cancellation->load()){rejected.reason="cancelled";return rejected;}
         auto candidate=registerConstrained(reference,moving,initial,options.refinement);
@@ -552,8 +835,7 @@ RegistrationResult registerGlobalConstrained(const std::vector<Point>& reference
         }
     }
     if (best.confidence < options.minimumConfidence) {
-        best.accepted = false;
-        best.reason = "low global confidence";
+        best.reason = "check registration";
         return best;
     }
     best.reason="accepted global";return best;
