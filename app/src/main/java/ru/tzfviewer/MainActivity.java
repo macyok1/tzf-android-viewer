@@ -59,6 +59,7 @@ public final class MainActivity extends Activity {
     private final AutoPointBudget autoPointBudget=new AutoPointBudget();
     private ProjectStore store;
     private ProjectModel project;
+    private RegistrationGraph registrationGraph;
     private PointCloudView cloud;
     private ScanTreePanel tree;
     private TextView status,referenceLabel,movingLabel,transformSummary;
@@ -85,7 +86,7 @@ public final class MainActivity extends Activity {
 
     @Override public void onCreate(Bundle state){
         super.onCreate(state);
-        store=new ProjectStore(getFilesDir());String previewPath=getIntent().getStringExtra(EXTRA_X7_PREVIEW_PATH);previewMode=previewPath!=null;if(previewMode){previewFile=new File(previewPath);if(!previewFile.isFile()){finish();return;}project=ProjectModel.create("Предпросмотр X7",System.currentTimeMillis());project.pointBudget=10_000_000;ProjectModel.Scan scan=new ProjectModel.Scan(UUID.randomUUID().toString(),previewFile.getName());scan.uri=Uri.fromFile(previewFile).toString();project.root.add(scan);}else{String id=getIntent().getStringExtra(EXTRA_PROJECT_ID);if(id==null){finish();return;}try{project=store.load(id);}catch(Exception error){finish();return;}}
+        store=new ProjectStore(getFilesDir());String previewPath=getIntent().getStringExtra(EXTRA_X7_PREVIEW_PATH);previewMode=previewPath!=null;if(previewMode){previewFile=new File(previewPath);if(!previewFile.isFile()){finish();return;}project=ProjectModel.create("Предпросмотр X7",System.currentTimeMillis());project.pointBudget=10_000_000;ProjectModel.Scan scan=new ProjectModel.Scan(UUID.randomUUID().toString(),previewFile.getName());scan.uri=Uri.fromFile(previewFile).toString();new RegistrationGraph(project).addScan(project.root,scan,System.currentTimeMillis());}else{String id=getIntent().getStringExtra(EXTRA_PROJECT_ID);if(id==null){finish();return;}try{project=store.load(id);}catch(Exception error){finish();return;}}registrationGraph=new RegistrationGraph(project);
         setContentView(R.layout.activity_main);
         expandedLayout=getResources().getBoolean(R.bool.expanded_layout);
         cloud=new PointCloudView(this);
@@ -222,7 +223,7 @@ public final class MainActivity extends Activity {
     private void selectTzf(){Intent intent=new Intent(Intent.ACTION_OPEN_DOCUMENT);intent.setType("*/*");intent.addCategory(Intent.CATEGORY_OPENABLE);intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE,true);intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);startActivityForResult(intent,PICK_TZF);}
     @Override protected void onActivityResult(int request,int result,Intent data){super.onActivityResult(request,result,data);if(request==PREVIEW_X7){previewInFlight=false;return;}if(request==CREATE_ASC){if(result==RESULT_OK&&data!=null&&data.getData()!=null)exportAsc(data.getData());return;}if(request!=PICK_TZF||result!=RESULT_OK||data==null)return;List<Uri> uris=new ArrayList<>();ClipData clip=data.getClipData();if(clip!=null)for(int i=0;i<clip.getItemCount();i++)uris.add(clip.getItemAt(i).getUri());else if(data.getData()!=null)uris.add(data.getData());int added=0;for(Uri uri:uris){String name=displayName(uri);if(!name.toLowerCase(Locale.ROOT).endsWith(".tzf")){status.setText("Пропущен не-TZF файл: "+name);continue;}try{getContentResolver().takePersistableUriPermission(uri,Intent.FLAG_GRANT_READ_URI_PERMISSION);}catch(SecurityException ignored){}ProjectModel.Scan scan=rememberScan(uri,name);if(scan.loadState!=ProjectModel.Scan.READY){decodeScene(uri,scan);added++;}}changed();tree.refresh();status.setText("Добавлено в очередь: "+added);}
 
-    private ProjectModel.Scan rememberScan(Uri uri,String name){for(ProjectModel.Scan scan:allScans())if(uri.toString().equals(scan.uri))return scan;ProjectModel.Scan scan=new ProjectModel.Scan(UUID.randomUUID().toString(),name);scan.uri=uri.toString();scan.color=nextScanColor();project.root.add(scan);return scan;}
+    private ProjectModel.Scan rememberScan(Uri uri,String name){for(ProjectModel.Scan scan:allScans())if(uri.toString().equals(scan.uri))return scan;ProjectModel.Scan scan=new ProjectModel.Scan(UUID.randomUUID().toString(),name);scan.uri=uri.toString();scan.color=nextScanColor();registrationGraph.addScan(project.root,scan,System.currentTimeMillis());return scan;}
     private int nextScanColor(){HashSet<Integer> used=new HashSet<>();for(ProjectModel.Scan scan:allScans())used.add(scan.color);int[] choices=new int[SCAN_COLORS.length];int count=0;for(int color:SCAN_COLORS)if(!used.contains(color))choices[count++]=color;if(count==0){System.arraycopy(SCAN_COLORS,0,choices,0,SCAN_COLORS.length);count=choices.length;}return choices[random.nextInt(count)];}
     private String displayName(Uri uri){try(android.database.Cursor c=getContentResolver().query(uri,new String[]{OpenableColumns.DISPLAY_NAME},null,null,null)){if(c!=null&&c.moveToFirst())return c.getString(0);}catch(Exception ignored){}String name=uri.getLastPathSegment();return name==null?"Scan.tzf":name.substring(Math.max(name.lastIndexOf('/')+1,name.lastIndexOf(':')+1));}
 

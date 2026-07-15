@@ -13,7 +13,7 @@ public class ProjectModelTest {
         ProjectModel.Group a=new ProjectModel.Group("a","a"),b=new ProjectModel.Group("b","b");a.add(b);try{b.add(a);fail();}catch(IllegalArgumentException expected){}ProjectModel.Group c=new ProjectModel.Group("c","c");try{c.add(b);fail();}catch(IllegalStateException expected){}
     }
     @Test public void codecRoundTripsHierarchyAndRussianText(){
-        ProjectModel p=new ProjectModel("abc","Съёмка",10);ProjectModel.Group g=new ProjectModel.Group("g","Связка 12");ProjectModel.Scan s=new ProjectModel.Scan("s","Скан №1"),other=new ProjectModel.Scan("o","Другой");s.uri="content://точки/1";s.transform[3]=42;g.expanded=false;p.root.add(g);g.add(s);p.root.add(other);p.setReference(g);p.setMoving(other);p.clipEnabled=true;p.clipLocked=true;System.arraycopy(new float[]{1,2,3,4,5,6},0,p.clipBounds,0,6);String encoded=ProjectCodec.encode(p);ProjectModel restored=ProjectCodec.decode(encoded);assertEquals("Съёмка",restored.name);assertEquals(2,restored.scanCount());ProjectModel.Group rg=(ProjectModel.Group)restored.findNode("g");ProjectModel.Scan rs=(ProjectModel.Scan)restored.findNode("s");assertEquals(s.uri,rs.uri);assertEquals(42,rs.transform[3],T);assertFalse(rg.expanded);assertEquals("g",restored.referenceNodeId);assertEquals("o",restored.movingNodeId);assertTrue(restored.clipEnabled);assertTrue(restored.clipLocked);assertArrayEquals(p.clipBounds,restored.clipBounds,T);
+        ProjectModel p=new ProjectModel("abc","Съёмка",10);ProjectModel.Group g=new ProjectModel.Group("g","Связка 12");ProjectModel.Scan s=new ProjectModel.Scan("s","Скан №1"),other=new ProjectModel.Scan("o","Другой");s.uri="content://точки/1";s.transform[3]=42;g.expanded=false;p.root.add(g);g.add(s);p.root.add(other);p.setReference(g);p.setMoving(other);p.clipEnabled=true;p.clipLocked=true;System.arraycopy(new float[]{1,2,3,4,5,6},0,p.clipBounds,0,6);String encoded=ProjectCodec.encode(p);ProjectModel restored=ProjectCodec.decode(encoded);assertEquals("Съёмка",restored.name);assertEquals(2,restored.scanCount());ProjectModel.Group rg=(ProjectModel.Group)restored.findNode("g");ProjectModel.Scan rs=(ProjectModel.Scan)restored.findNode("s");assertEquals(s.uri,rs.uri);assertEquals(42,rs.transform[3],T);assertFalse(rg.expanded);assertEquals("",restored.referenceNodeId);assertEquals("",restored.movingNodeId);assertTrue(restored.clipEnabled);assertTrue(restored.clipLocked);assertArrayEquals(p.clipBounds,restored.clipBounds,T);
     }
     @Test public void rolesAreUniqueAndRejectAncestorPair(){ProjectModel p=new ProjectModel("p","p",1);ProjectModel.Group g=new ProjectModel.Group("g","g");ProjectModel.Scan a=new ProjectModel.Scan("a","a"),b=new ProjectModel.Scan("b","b");p.root.add(g);g.add(a);p.root.add(b);p.setReference(a);p.setMoving(b);assertTrue(p.canRegister());p.setMoving(a);assertEquals("",p.referenceNodeId);assertEquals("a",p.movingNodeId);p.setReference(g);assertEquals("",p.movingNodeId);p.setMoving(a);assertEquals("",p.referenceNodeId);}
 
@@ -55,6 +55,33 @@ public class ProjectModelTest {
         ProjectModel p=new ProjectModel("p","pose",1);ProjectModel.Scan scan=new ProjectModel.Scan("s","scan");scan.embeddedPoseValid=true;scan.embeddedPoseApplied=true;System.arraycopy(new float[]{100,200,3,-45},0,scan.embeddedPose,0,4);p.root.add(scan);
         ProjectModel.Scan restored=(ProjectModel.Scan)ProjectCodec.decode(ProjectCodec.encode(p)).findNode("s");
         assertTrue(restored.embeddedPoseValid);assertTrue(restored.embeddedPoseApplied);assertArrayEquals(scan.embeddedPose,restored.embeddedPose,T);
+    }
+
+    @Test public void codecV5RoundTripsRegistrationRecords(){
+        ProjectModel p=new ProjectModel("p","v5",100);RegistrationGraph graph=new RegistrationGraph(p);
+        ProjectModel.Scan reference=new ProjectModel.Scan("r","reference"),moving=new ProjectModel.Scan("m","moving");
+        graph.addScan(p.root,reference,110);graph.addScan(p.root,moving,120);
+        moving.registrationState=ProjectModel.RegistrationState.CHECK;moving.attemptedReferenceId="r";moving.registrationMessage="check registration";
+        moving.registrationMetrics=new ProjectModel.RegistrationMetrics(1.2f,3.4f,.56f,.78f,91);moving.pendingCandidateValid=true;System.arraycopy(new float[]{4,5,6,7},0,moving.pendingCandidateWorld,0,4);
+        ProjectModel restored=ProjectCodec.decode(ProjectCodec.encode(p));ProjectModel.Scan rm=(ProjectModel.Scan)restored.findNode("m");
+        assertEquals(5,ProjectModel.FORMAT_VERSION);assertEquals(2,restored.registrationSets.size());assertEquals(120,rm.acquiredAt);assertEquals(ProjectModel.RegistrationState.CHECK,rm.registrationState);assertEquals("r",rm.attemptedReferenceId);assertEquals("check registration",rm.registrationMessage);assertEquals(1.2f,rm.registrationMetrics.rms,T);assertTrue(rm.pendingCandidateValid);assertArrayEquals(moving.pendingCandidateWorld,rm.pendingCandidateWorld,T);
+    }
+
+    @Test public void legacyV4MigratesToStableSeparateSetsWithoutMovingScans(){
+        ProjectModel p=new ProjectModel("legacy","legacy",100);ProjectModel.Group folder=new ProjectModel.Group("g","folder");folder.transform[0]=7;folder.transform[3]=30;p.root.add(folder);ProjectModel.Scan a=new ProjectModel.Scan("a","a"),b=new ProjectModel.Scan("b","b");folder.add(a);p.root.add(b);a.transform[0]=3;b.transform[1]=8;
+        String v4=asLegacyV4(ProjectCodec.encode(p));float[] aw=a.worldTransform(),bw=b.worldTransform();
+        ProjectModel first=ProjectCodec.decode(v4),second=ProjectCodec.decode(v4);
+        assertArrayEquals(aw,first.findNode("a").worldTransform(),T);assertArrayEquals(bw,first.findNode("b").worldTransform(),T);assertEquals(2,first.registrationSets.size());assertEquals(first.registrationSets.get(0).id,second.registrationSets.get(0).id);assertEquals(ProjectModel.RegistrationState.LEGACY_UNLINKED,((ProjectModel.Scan)first.findNode("a")).registrationState);
+    }
+
+    @Test public void codecRejectsDuplicateRegistrationMembership(){
+        ProjectModel p=new ProjectModel("p","p",1);RegistrationGraph graph=new RegistrationGraph(p);graph.addScan(p.root,new ProjectModel.Scan("s","s"),1);
+        String encoded=ProjectCodec.encode(p);String setLine=null;for(String line:encoded.split("\n"))if(line.startsWith("RS\t"))setLine=line;
+        try{ProjectCodec.decode(encoded+setLine+"\n");fail();}catch(IllegalArgumentException expected){}
+    }
+
+    private static String asLegacyV4(String encoded){
+        StringBuilder out=new StringBuilder();for(String line:encoded.split("\n")){if(line.startsWith("TZF_PROJECT\t")){out.append("TZF_PROJECT\t4\n");continue;}if(line.startsWith("RS\t")||line.startsWith("RL\t"))continue;if(line.startsWith("S\t")){String[] fields=line.split("\t",-1);line=String.join("\t",java.util.Arrays.copyOf(fields,19));}out.append(line).append('\n');}return out.toString();
     }
 
     @Test public void legacyV3MigrationNeverMovesExistingScan(){

@@ -6,7 +6,7 @@ import java.util.List;
 import java.util.UUID;
 
 final class ProjectModel {
-    static final int FORMAT_VERSION = 4;
+    static final int FORMAT_VERSION = 5;
     final String id;
     String name;
     long createdAt;
@@ -19,6 +19,8 @@ final class ProjectModel {
     final float[] clipBounds = new float[6];
     String referenceNodeId = "", movingNodeId = "";
     final Group root;
+    final List<RegistrationSet> registrationSets = new ArrayList<>();
+    final List<RegistrationLink> registrationLinks = new ArrayList<>();
 
     ProjectModel(String id, String name, long now) {
         this.id = id; this.name = name; createdAt = modifiedAt = now;
@@ -64,11 +66,45 @@ final class ProjectModel {
         boolean embeddedPoseValid;
         boolean embeddedPoseApplied;
         final float[] embeddedPose = new float[4];
+        long acquiredAt;
+        RegistrationState registrationState=RegistrationState.UNLINKED;
+        String attemptedReferenceId="";
+        String registrationMessage="";
+        RegistrationMetrics registrationMetrics=RegistrationMetrics.empty();
+        boolean pendingCandidateValid;
+        final float[] pendingCandidateWorld=new float[4];
         transient int loadState=WAITING;
         transient String loadError="";
         Scan(String id, String name) { super(id,name); }
         @Override boolean isGroup(){return false;}
         @Override int scanCount(){return 1;}
+    }
+
+    enum RegistrationState { UNLINKED, PENDING, REGISTERING, REGISTERED, CHECK, FAILED, LEGACY_UNLINKED }
+    enum LinkSource { AUTO_X7, MANUAL }
+
+    static final class RegistrationMetrics {
+        final float rms,p95,overlap,consistency,confidence;
+        RegistrationMetrics(float rms,float p95,float overlap,float consistency,float confidence){this.rms=rms;this.p95=p95;this.overlap=overlap;this.consistency=consistency;this.confidence=confidence;}
+        static RegistrationMetrics empty(){return new RegistrationMetrics(0,0,0,0,0);}
+        boolean finite(){return Float.isFinite(rms)&&Float.isFinite(p95)&&Float.isFinite(overlap)&&Float.isFinite(consistency)&&Float.isFinite(confidence);}
+    }
+
+    static final class RegistrationSet {
+        final String id;
+        String name;
+        final List<String> stationIds=new ArrayList<>();
+        long createdAt,modifiedAt;
+        RegistrationSet(String id,String name,long now){this.id=id;this.name=name;createdAt=modifiedAt=now;}
+    }
+
+    static final class RegistrationLink {
+        final String id,movingStationId,referenceStationId;
+        final float[] relativeTransform;
+        final RegistrationMetrics metrics;
+        final LinkSource source;
+        final long acceptedAt;
+        RegistrationLink(String id,String movingStationId,String referenceStationId,float[] relativeTransform,RegistrationMetrics metrics,LinkSource source,long acceptedAt){this.id=id;this.movingStationId=movingStationId;this.referenceStationId=referenceStationId;this.relativeTransform=relativeTransform.clone();this.metrics=metrics;this.source=source;this.acceptedAt=acceptedAt;}
     }
 
     static final class Group extends Node {

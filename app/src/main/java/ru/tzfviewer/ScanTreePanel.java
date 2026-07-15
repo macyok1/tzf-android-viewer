@@ -140,7 +140,7 @@ public final class ScanTreePanel extends LinearLayout {
     }
 
     private void confirmDelete(ProjectModel.Node node) {
-        new AlertDialog.Builder(getContext()).setTitle("Удалить из проекта?").setMessage("Исходные TZF останутся на устройстве.").setNegativeButton("Отмена", null).setPositiveButton("Удалить", (d,w) -> { project.clearRoleFor(node); node.parent().remove(node); changedAndRefresh(); if(listener!=null)listener.rolesChanged(); }).show();
+        new AlertDialog.Builder(getContext()).setTitle("Удалить из проекта?").setMessage("Исходные TZF останутся на устройстве.").setNegativeButton("Отмена", null).setPositiveButton("Удалить", (d,w) -> { new RegistrationGraph(project).removeNode(node); changedAndRefresh(); if(listener!=null)listener.rolesChanged(); }).show();
     }
 
     private void groupSelected() {
