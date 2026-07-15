@@ -11,7 +11,7 @@ public class RegistrationTreeModelTest {
         ProjectModel project=new ProjectModel("p","p",1);RegistrationGraph graph=new RegistrationGraph(project);
         ProjectModel.Scan first=add(graph,"1",10),second=add(graph,"2",20);graph.acceptRegistration("1","2",new float[]{1,0,0,0},metrics(),ProjectModel.LinkSource.AUTO_X7,30);
         List<RegistrationTreeModel.Row> rows=RegistrationTreeModel.rows(project);
-        assertEquals(3,rows.size());assertEquals(RegistrationTreeModel.Kind.SET,rows.get(0).kind);assertEquals("1",rows.get(1).stationId);assertEquals("2",rows.get(2).stationId);for(RegistrationTreeModel.Row row:rows){assertFalse(row.actions.contains(RegistrationTreeModel.Action.SET_REFERENCE));assertFalse(row.actions.contains(RegistrationTreeModel.Action.SET_MOVING));}
+        assertEquals(3,rows.size());assertEquals(RegistrationTreeModel.Kind.SET,rows.get(0).kind);assertEquals("1",rows.get(1).stationId);assertEquals("2",rows.get(2).stationId);assertTrue(rows.get(1).actions.contains(RegistrationTreeModel.Action.SET_REFERENCE));assertTrue(rows.get(1).actions.contains(RegistrationTreeModel.Action.SET_MOVING));assertTrue(rows.get(1).actions.contains(RegistrationTreeModel.Action.DETACH));
         assertEquals(RegistrationTreeModel.Tone.GREEN,rows.get(2).tone);
     }
 

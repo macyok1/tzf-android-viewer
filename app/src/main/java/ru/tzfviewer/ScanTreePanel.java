@@ -28,6 +28,7 @@ public final class ScanTreePanel extends LinearLayout {
         default void rejectRegistration(String stationId){}
         default void retryRegistration(String stationId){}
         default void manualRegistration(String stationId){}
+        default void detachRegistration(String stationId){}
     }
 
     private ProjectModel project;
@@ -68,8 +69,11 @@ public final class ScanTreePanel extends LinearLayout {
 
     private void addRegistrationRows(){
         List<RegistrationTreeModel.Row> rows=RegistrationTreeModel.rows(project);if(rows.isEmpty()){TextView empty=text("Наборов сшивки пока нет");empty.setPadding(dp(12),dp(16),0,dp(16));addView(empty);return;}
-        for(RegistrationTreeModel.Row item:rows){LinearLayout line=row();if(item.kind==RegistrationTreeModel.Kind.SET){line.setPadding(dp(10),dp(3),dp(6),0);TextView title=text("▼  "+item.title+" · "+item.status);title.setTextColor(Color.rgb(159,180,194));line.addView(title,new LayoutParams(0,dp(38),1));}else{line.setPadding(dp(24),0,dp(2),0);TextView title=text("●  "+item.title+" · "+item.status);title.setTextColor(toneColor(item.tone));line.addView(title,new LayoutParams(0,dp(40),1));if(item.actions.contains(RegistrationTreeModel.Action.ACCEPT))line.addView(action("✓",v->{if(listener!=null)listener.acceptRegistration(item.stationId);}),new LayoutParams(dp(42),dp(38)));if(item.actions.contains(RegistrationTreeModel.Action.REJECT))line.addView(action("×",v->{if(listener!=null)listener.rejectRegistration(item.stationId);}),new LayoutParams(dp(42),dp(38)));if(item.actions.contains(RegistrationTreeModel.Action.RETRY))line.addView(action("Ещё",v->{if(listener!=null)listener.retryRegistration(item.stationId);}),new LayoutParams(dp(54),dp(38)));if(item.actions.contains(RegistrationTreeModel.Action.MANUAL_REGISTER))line.addView(action("Вручную",v->{if(listener!=null)listener.manualRegistration(item.stationId);}),new LayoutParams(dp(82),dp(38)));}addView(line);}
+        for(RegistrationTreeModel.Row item:rows){LinearLayout line=row();if(item.kind==RegistrationTreeModel.Kind.SET){line.setPadding(dp(10),dp(3),dp(6),0);TextView title=text("▼  "+item.title+" · "+item.status);title.setTextColor(Color.rgb(159,180,194));line.addView(title,new LayoutParams(0,dp(38),1));}else{line.setPadding(dp(18),0,dp(2),0);TextView title=text("●  "+item.title+" · "+item.status);title.setTextColor(toneColor(item.tone));line.addView(title,new LayoutParams(0,dp(40),1));line.addView(role("R",item.stationId.equals(project.referenceNodeId),v->toggleRegistrationRole(item.stationId,true)),new LayoutParams(dp(34),dp(36)));line.addView(role("M",item.stationId.equals(project.movingNodeId),v->toggleRegistrationRole(item.stationId,false)),new LayoutParams(dp(34),dp(36)));if(item.actions.contains(RegistrationTreeModel.Action.ACCEPT))line.addView(action("✓",v->{if(listener!=null)listener.acceptRegistration(item.stationId);}),new LayoutParams(dp(34),dp(36)));if(item.actions.contains(RegistrationTreeModel.Action.REJECT))line.addView(action("×",v->{if(listener!=null)listener.rejectRegistration(item.stationId);}),new LayoutParams(dp(34),dp(36)));if(item.actions.contains(RegistrationTreeModel.Action.DETACH))line.addView(action("⋮",v->showRegistrationMenu(v,item.stationId)),new LayoutParams(dp(36),dp(36)));}addView(line);}
     }
+
+    private void toggleRegistrationRole(String stationId,boolean reference){ProjectModel.Node node=project.findNode(stationId);if(!(node instanceof ProjectModel.Scan))return;RegistrationGraph graph=new RegistrationGraph(project);ProjectModel.Node opposite=project.findNode(reference?project.movingNodeId:project.referenceNodeId);if(opposite!=null&&graph.setForScan(opposite.id)==graph.setForScan(stationId)){if(reference)project.setMoving(null);else project.setReference(null);}if(reference)project.setReference(stationId.equals(project.referenceNodeId)?null:node);else project.setMoving(stationId.equals(project.movingNodeId)?null:node);if(listener!=null)listener.rolesChanged();refresh();}
+    private void showRegistrationMenu(View anchor,String stationId){PopupMenu menu=new PopupMenu(getContext(),anchor);menu.getMenu().add("Убрать из набора");menu.setOnMenuItemClickListener(item->{if(listener!=null)listener.detachRegistration(stationId);return true;});menu.show();}
 
     private void addSelectionBar() {
         LinearLayout bar = row();
@@ -172,6 +176,7 @@ public final class ScanTreePanel extends LinearLayout {
     private LinearLayout row(){LinearLayout row=new LinearLayout(getContext());row.setGravity(Gravity.CENTER_VERTICAL);return row;}
     private TextView text(String value){TextView view=new TextView(getContext());view.setText(value);view.setTextColor(Color.WHITE);view.setGravity(Gravity.CENTER_VERTICAL);view.setSingleLine(true);return view;}
     private Button action(String value,OnClickListener listener){Button button=new Button(getContext());button.setText(value);button.setTextColor(Color.WHITE);button.setTextSize(11);button.setPadding(0,0,0,0);button.setBackgroundColor(Color.TRANSPARENT);button.setOnClickListener(listener);return button;}
+    private Button role(String value,boolean active,OnClickListener listener){Button button=action(value,listener);button.setTextSize(12);button.setTextColor(active?("R".equals(value)?Color.rgb(56,201,232):Color.rgb(255,180,74)):Color.rgb(120,145,158));return button;}
     private int toneColor(RegistrationTreeModel.Tone tone){if(tone==RegistrationTreeModel.Tone.GREEN)return Color.rgb(142,224,111);if(tone==RegistrationTreeModel.Tone.ORANGE)return Color.rgb(255,180,74);if(tone==RegistrationTreeModel.Tone.RED)return Color.rgb(255,107,107);return Color.rgb(159,180,194);}
     private int dp(int value){return Math.round(value*getResources().getDisplayMetrics().density);}
 }

@@ -78,6 +78,10 @@ public class RegistrationGraphTest {
         graph.validate();
     }
 
+    @Test public void detachingBridgeSplitsSetIntoConnectedComponentsWithoutMovingScans(){
+        ProjectModel project=new ProjectModel("p","p",1);RegistrationGraph graph=new RegistrationGraph(project);ProjectModel.Scan a=scan(graph,"a",1,0,0,0),b=scan(graph,"b",2,2,0,0),c=scan(graph,"c",3,4,0,0);graph.acceptRegistration("a","b",new float[]{2,0,0,0},metrics(),ProjectModel.LinkSource.AUTO_X7,4);graph.acceptRegistration("b","c",new float[]{4,0,0,0},metrics(),ProjectModel.LinkSource.AUTO_X7,5);float[] aw=a.worldTransform(),bw=b.worldTransform(),cw=c.worldTransform();graph.detachStation("b",6);assertEquals(3,project.registrationSets.size());assertTrue(project.registrationLinks.isEmpty());assertNotSame(graph.setForScan("a"),graph.setForScan("b"));assertNotSame(graph.setForScan("c"),graph.setForScan("b"));assertNotSame(graph.setForScan("a"),graph.setForScan("c"));assertArrayEquals(aw,a.worldTransform(),T);assertArrayEquals(bw,b.worldTransform(),T);assertArrayEquals(cw,c.worldTransform(),T);graph.validate();
+    }
+
     private static ProjectModel.Scan scan(RegistrationGraph graph,String id,long at,float x,float y,float yaw){ProjectModel.Scan scan=new ProjectModel.Scan(id,id);graph.addScan(graph.project().root,scan,at);scan.transform[0]=x;scan.transform[1]=y;scan.transform[3]=yaw;return scan;}
     private static ProjectModel.RegistrationMetrics metrics(){return new ProjectModel.RegistrationMetrics(1,2,.6f,.8f,90);}
 }

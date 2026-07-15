@@ -22,18 +22,17 @@
       <LinearLayout android:id="@+id/toolButtons" android:layout_width="match_parent" android:layout_height="wrap_content"
         android:orientation="vertical">
         <Button android:id="@+id/scanX7" style="@style/CompactTool" android:layout_width="44dp" android:layout_height="44dp" android:text="X7" android:textSize="11sp" android:contentDescription="Сканировать Trimble X7"/>
-        <Button android:id="@+id/x7RegisterTarget" style="@style/CompactTool" android:layout_width="44dp" android:layout_height="44dp" android:text="Сшить" android:textSize="8sp" android:contentDescription="Выбрать, с каким сканом сшивать новый X7"/>
         <Button android:id="@+id/compactOpen" style="@style/CompactTool" android:layout_width="44dp" android:layout_height="44dp" android:text="＋" android:contentDescription="Добавить TZF"/>
         <Button android:id="@+id/saveProject" style="@style/CompactTool" android:layout_width="44dp" android:layout_height="44dp" android:text="▣" android:contentDescription="Сохранить проект"/>
-        <Button android:id="@+id/exportAsc" style="@style/CompactTool" android:layout_width="44dp" android:layout_height="44dp" android:text="ASC" android:textSize="9sp" android:contentDescription="Экспорт проекта в ASC"/>
         <Button android:id="@+id/compactFit" style="@style/CompactTool" android:layout_width="44dp" android:layout_height="44dp" android:text="⌂" android:contentDescription="Показать всё"/>
         <Button android:id="@+id/scans" style="@style/CompactTool" android:layout_width="44dp" android:layout_height="44dp" android:text="☷" android:textSize="18sp" android:contentDescription="Сканы и наборы сшивки"/>
         <Button android:id="@+id/measure" style="@style/CompactTool" android:layout_width="44dp" android:layout_height="44dp" android:text="◎" android:contentDescription="Измерение"/>
         <Button android:id="@+id/compactProjection" style="@style/CompactTool" android:layout_width="44dp" android:layout_height="44dp" android:text="P" android:textSize="11sp" android:contentDescription="Режим проекции"/>
         <Button android:id="@+id/grid" style="@style/CompactTool" android:layout_width="44dp" android:layout_height="44dp" android:text="▦" android:contentDescription="Сетка"/>
-        <Button android:id="@+id/section" style="@style/CompactTool" android:layout_width="44dp" android:layout_height="44dp" android:text="CUT" android:textSize="9sp" android:contentDescription="Сечение"/>
         <Button android:id="@+id/pointSize" style="@style/CompactTool" android:layout_width="44dp" android:layout_height="44dp" android:text="•• 2" android:textSize="10sp" android:contentDescription="Размер точек"/>
         <Button android:id="@+id/pointBudget" style="@style/CompactTool" android:layout_width="44dp" android:layout_height="44dp" android:text="150k" android:textSize="10sp" android:contentDescription="Количество точек"/>
+        <Button android:id="@+id/section" style="@style/CompactTool" android:layout_width="44dp" android:layout_height="44dp" android:text="CUT" android:textSize="9sp" android:contentDescription="Сечение"/>
+        <Button android:id="@+id/exportAsc" style="@style/CompactTool" android:layout_width="44dp" android:layout_height="44dp" android:text="ASC" android:textSize="9sp" android:contentDescription="Экспорт проекта в ASC"/>
         <Button android:id="@+id/moreTools" style="@style/CompactTool" android:layout_width="44dp" android:layout_height="44dp" android:text="⋯" android:contentDescription="Меню инструментов"/>
       </LinearLayout>
     </ScrollView>
@@ -72,6 +71,7 @@
         <Button android:id="@+id/manipulatorStitch" style="@style/ToolButton" android:layout_width="94dp" android:layout_height="48dp" android:text="Сшить" android:visibility="gone" />
         <Button android:id="@+id/exitManipulator" style="@style/ToolButton" android:layout_width="78dp" android:layout_height="48dp" android:text="Выйти" android:visibility="gone" />
         <Button android:id="@+id/pairDetails" style="@style/CompactTool" android:layout_width="44dp" android:layout_height="48dp" android:text="M" android:textSize="12sp" android:contentDescription="Преобразование M" />
+        <Button android:id="@+id/x7RegisterTarget" style="@style/ToolButton" android:layout_width="0dp" android:layout_height="48dp" android:layout_weight="1" android:text="Сшить с" android:textSize="11sp" android:visibility="gone" android:contentDescription="Выбрать, с каким сканом сшивать новый X7"/>
         <ProgressBar android:id="@+id/registrationProgress" style="?android:attr/progressBarStyleHorizontal" android:layout_width="72dp" android:layout_height="5dp" android:indeterminate="false" android:max="100" android:visibility="gone" />
         <ProgressBar android:id="@+id/x7Progress" style="?android:attr/progressBarStyleHorizontal" android:layout_width="72dp" android:layout_height="5dp" android:indeterminate="false" android:max="100" android:visibility="gone" />
         <Button android:id="@+id/cancelX7" style="@style/ToolButton" android:layout_width="82dp" android:layout_height="48dp" android:text="Стоп X7" android:visibility="gone" />
