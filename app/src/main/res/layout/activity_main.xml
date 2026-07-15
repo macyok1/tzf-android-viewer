@@ -40,6 +40,10 @@
     <ru.tzfviewer.OrientationCubeView android:id="@+id/orientation" android:layout_width="132dp" android:layout_height="108dp"
         android:layout_gravity="top|end" android:layout_marginTop="60dp" android:layout_marginEnd="12dp" />
 
+    <Button android:id="@+id/orbitMode" style="@style/CompactTool" android:layout_width="48dp" android:layout_height="48dp"
+        android:layout_gravity="top|end" android:layout_marginTop="170dp" android:layout_marginEnd="12dp"
+        android:text="↻" android:textSize="24sp" android:contentDescription="@string/orbit_mode_off" android:elevation="7dp" />
+
     <TextView android:id="@+id/status" android:layout_width="wrap_content" android:layout_height="wrap_content"
         android:layout_gravity="bottom|start" android:layout_marginStart="60dp" android:layout_marginBottom="64dp"
         android:maxWidth="280dp" android:padding="7dp" android:background="@color/panel"

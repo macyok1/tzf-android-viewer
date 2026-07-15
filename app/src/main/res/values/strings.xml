@@ -10,4 +10,6 @@
     <string name="restore_transform">Восстановить</string>
     <string name="empty_status">Откройте TZF, чтобы начать просмотр</string>
     <string name="translation_step">Шаг перемещения</string><string name="rotation_step">Шаг вращения</string>
+    <string name="orbit_mode_off">Включить вращение модели одним пальцем</string>
+    <string name="orbit_mode_on">Выключить вращение; двигать вид одним пальцем</string>
 </resources>

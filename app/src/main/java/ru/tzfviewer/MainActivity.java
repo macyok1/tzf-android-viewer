@@ -62,7 +62,7 @@ public final class MainActivity extends Activity {
     private PointCloudView cloud;
     private ScanTreePanel tree;
     private TextView status,referenceLabel,movingLabel,transformSummary;
-    private Button cancelButton,applyCandidateButton,rejectCandidateButton,pointSizeButton,budgetButton,stitchMenuButton,scanX7Button,cancelX7Button,manipulatorStitchButton,exitManipulatorButton;
+    private Button cancelButton,applyCandidateButton,rejectCandidateButton,pointSizeButton,budgetButton,stitchMenuButton,scanX7Button,cancelX7Button,manipulatorStitchButton,exitManipulatorButton,orbitModeButton;
     private ProgressBar registrationProgress,x7Progress;
     private View scanPanel,settingsPanel;
     private View pairCard;
@@ -105,13 +105,17 @@ public final class MainActivity extends Activity {
         ((TextView)findViewById(R.id.projectTitle)).setText(project.name);
         status=findViewById(R.id.status);referenceLabel=findViewById(R.id.referenceLabel);movingLabel=findViewById(R.id.movingLabel);transformSummary=findViewById(R.id.transformSummary);
         cancelButton=findViewById(R.id.cancelRegistration);applyCandidateButton=findViewById(R.id.applyCandidate);rejectCandidateButton=findViewById(R.id.rejectCandidate);registrationProgress=findViewById(R.id.registrationProgress);stitchMenuButton=findViewById(R.id.moreTools);manipulatorStitchButton=findViewById(R.id.manipulatorStitch);exitManipulatorButton=findViewById(R.id.exitManipulator);
-        scanPanel=findViewById(R.id.scanPanel);settingsPanel=findViewById(R.id.settingsPanel);pairCard=findViewById(R.id.pairCard);tree=findViewById(R.id.scanTree);pointSizeButton=findViewById(R.id.pointSize);budgetButton=findViewById(R.id.pointBudget);scanX7Button=findViewById(R.id.scanX7);x7Progress=findViewById(R.id.x7Progress);cancelX7Button=findViewById(R.id.cancelX7);
+        scanPanel=findViewById(R.id.scanPanel);settingsPanel=findViewById(R.id.settingsPanel);pairCard=findViewById(R.id.pairCard);tree=findViewById(R.id.scanTree);pointSizeButton=findViewById(R.id.pointSize);budgetButton=findViewById(R.id.pointBudget);scanX7Button=findViewById(R.id.scanX7);x7Progress=findViewById(R.id.x7Progress);cancelX7Button=findViewById(R.id.cancelX7);orbitModeButton=findViewById(R.id.orbitMode);
     }
 
     private void bindCamera(){
         OrientationCubeView cube=findViewById(R.id.orientation);cube.setListener(new OrientationCubeView.Listener(){public void onPreset(float yaw,float pitch){cloud.setPreset(yaw,pitch);}public void onRotate(float dy,float dp){cloud.rotateCamera(dy,dp);}});
         cloud.setOrientationListener((yaw,pitch)->{cube.setOrientation(yaw,pitch);if(!manipulatorMode){project.cameraYaw=yaw;project.cameraPitch=pitch;project.touch(System.currentTimeMillis());}});
+        orbitModeButton.setOnClickListener(v->setOrbitMode(!cloud.orbitEnabled()));
+        setOrbitMode(false);
     }
+
+    private void setOrbitMode(boolean enabled){cloud.setOrbitEnabled(enabled);boolean active=cloud.orbitEnabled();orbitModeButton.setSelected(active);orbitModeButton.setBackgroundColor(getColor(active?R.color.cyan:R.color.panel_raised));orbitModeButton.setTextColor(getColor(active?R.color.ink:R.color.text_primary));orbitModeButton.setContentDescription(getString(active?R.string.orbit_mode_on:R.string.orbit_mode_off));}
 
     private void bindTools(){
         findViewById(R.id.compactOpen).setOnClickListener(v->selectTzf());
@@ -165,8 +169,8 @@ public final class MainActivity extends Activity {
         menu.setOnMenuItemClickListener(item->{if(item.getItemId()==4){if(manipulatorMode)exitManipulatorMode(true);else enterManipulatorMode();}else if(item.getItemId()==1)startDeepRegistration();else if(item.getItemId()==2)startRegistration();else if(item.getItemId()==3)startGroupRegistration();return true;});
         menu.show();
     }
-    private void enterManipulatorMode(){ProjectModel.Node reference=project.findNode(project.referenceNodeId),moving=project.findNode(project.movingNodeId);if(!project.canRegister()||!nodesReady(reference,moving)){status.setText("Выберите готовые R и M");return;}rejectRegistrationCandidate();manipulatorMode=true;scanPanel.setVisibility(View.GONE);settingsPanel.setVisibility(View.GONE);cloud.setTopDownManipulator(true);renderRegistrationState(RegistrationUiState.idle());status.setText("Манипулятор: внутри круга — двигать XY, кольцо — вращать · затем Сшить");}
-    private void exitManipulatorMode(boolean announce){if(!manipulatorMode)return;manipulatorMode=false;cloud.setTopDownManipulator(false);renderRegistrationState(RegistrationUiState.idle());if(announce)status.setText("Манипулятор выключен · ракурс восстановлен");}
+    private void enterManipulatorMode(){ProjectModel.Node reference=project.findNode(project.referenceNodeId),moving=project.findNode(project.movingNodeId);if(!project.canRegister()||!nodesReady(reference,moving)){status.setText("Выберите готовые R и M");return;}rejectRegistrationCandidate();manipulatorMode=true;scanPanel.setVisibility(View.GONE);settingsPanel.setVisibility(View.GONE);setOrbitMode(false);orbitModeButton.setVisibility(View.GONE);cloud.setTopDownManipulator(true);renderRegistrationState(RegistrationUiState.idle());status.setText("Манипулятор: внутри круга — двигать XY, кольцо — вращать · затем Сшить");}
+    private void exitManipulatorMode(boolean announce){if(!manipulatorMode)return;manipulatorMode=false;cloud.setTopDownManipulator(false);setOrbitMode(false);orbitModeButton.setVisibility(View.VISIBLE);renderRegistrationState(RegistrationUiState.idle());if(announce)status.setText("Манипулятор выключен · ракурс восстановлен");}
     private void showToolsMenu(View anchor){PopupMenu menu=new PopupMenu(this,anchor);menu.getMenu().add(0,108,0,"Сохранить проект");menu.getMenu().add(0,109,1,"Показать всё");menu.getMenu().add(0,101,2,"Экспортировать ASC");menu.getMenu().add(0,102,3,"Измерение");menu.getMenu().add(0,103,4,"Сменить проекцию");menu.getMenu().add(0,104,5,"Показать / скрыть сетку");menu.getMenu().add(0,105,6,"Размер точек: "+project.pointSize);menu.getMenu().add(0,106,7,"Количество точек: "+budgetLabel(project.pointBudget));android.view.MenuItem stitching=menu.getMenu().add(0,107,8,"Сшивка R/M…");ProjectModel.Node reference=project.findNode(project.referenceNodeId),moving=project.findNode(project.movingNodeId);stitching.setEnabled(stitchingActionsEnabled&&project.canRegister()&&nodesReady(reference,moving));menu.setOnMenuItemClickListener(item->{int id=item.getItemId();if(id==108)findViewById(R.id.saveProject).performClick();else if(id==109)findViewById(R.id.compactFit).performClick();else if(id==101)findViewById(R.id.exportAsc).performClick();else if(id==102)findViewById(R.id.measure).performClick();else if(id==103)findViewById(R.id.compactProjection).performClick();else if(id==104)findViewById(R.id.grid).performClick();else if(id==105)findViewById(R.id.pointSize).performClick();else if(id==106)findViewById(R.id.pointBudget).performClick();else if(id==107)showStitchingMenu(anchor);return true;});menu.show();}
 
     private void promptX7Connection(){

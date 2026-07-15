@@ -30,10 +30,10 @@ public final class PointCloudView extends GLSurfaceView {
     interface OrientationListener { void onOrientation(float yaw,float pitch); }
     private final CloudRenderer renderer;
     private final ScaleGestureDetector scale;
+    private final CameraGesturePolicy cameraGestures=new CameraGesturePolicy();
     private float lastX,lastY;
     private boolean discardNextSinglePointerMove;
     private boolean twoFingerGesture;
-    private float lastMidX,lastMidY;
     private boolean measureMode;
     private MeasureListener measureListener;
     private TransformListener transformListener;
@@ -101,22 +101,25 @@ public final class PointCloudView extends GLSurfaceView {
         if(topDownManipulator==enabled)return;
         cancelCameraAnimation();
         topDownManipulator=enabled;
+        cameraGestures.setManualRegistrationActive(enabled);
         if(enabled){savedManipulatorYaw=uiYaw;savedManipulatorPitch=uiPitch;uiYaw=0f;uiPitch=-90f;queueEvent(renderer::enterManipulator);}
         else{uiYaw=savedManipulatorYaw;uiPitch=savedManipulatorPitch;queueEvent(renderer::exitManipulator);}
         requestRender();notifyOrientation();
     }
+    void setOrbitEnabled(boolean enabled){cameraGestures.setOrbitEnabled(enabled);}
+    boolean orbitEnabled(){return cameraGestures.orbitEnabled();}
     void setMeasureMode(boolean enabled,MeasureListener listener){measureMode=enabled;measureListener=listener;queueEvent(renderer::clearMeasure);requestRender();}
 
     @Override public boolean onTouchEvent(MotionEvent e){
         scale.onTouchEvent(e);
         float x=e.getX(),y=e.getY();
-        if(e.getPointerCount()>1){removeCallbacks(longPressAction);cancelCameraAnimation();float midX=(e.getX(0)+e.getX(1))*.5f,midY=(e.getY(0)+e.getY(1))*.5f;if(twoFingerGesture){float dx=midX-lastMidX,dy=midY-lastMidY;queueEvent(()->renderer.panByPixels(dx,dy));}else{queueEvent(renderer::cancelGestures);twoFingerGesture=true;}lastMidX=midX;lastMidY=midY;lastX=x;lastY=y;discardNextSinglePointerMove=true;requestRender();return true;}
+        if(e.getPointerCount()>1){removeCallbacks(longPressAction);cancelCameraAnimation();if(!twoFingerGesture){queueEvent(renderer::cancelGestures);twoFingerGesture=true;}lastX=x;lastY=y;discardNextSinglePointerMove=true;requestRender();return true;}
         if(scale.isInProgress())return true;
         if(twoFingerGesture){twoFingerGesture=false;lastX=x;lastY=y;discardNextSinglePointerMove=true;return true;}
         if(discardNextSinglePointerMove){lastX=x;lastY=y;if(e.getActionMasked()==MotionEvent.ACTION_MOVE)discardNextSinglePointerMove=false;if(e.getActionMasked()==MotionEvent.ACTION_UP||e.getActionMasked()==MotionEvent.ACTION_CANCEL)discardNextSinglePointerMove=false;return true;}
         if(measureMode&&e.getActionMasked()==MotionEvent.ACTION_UP){queueEvent(()->{float[] m=renderer.pickPoint(x,y);if(m!=null&&measureListener!=null)post(()->measureListener.onMeasure(m[0],m[1]));});return true;}
         if(e.getActionMasked()==MotionEvent.ACTION_DOWN){cancelCameraAnimation();lastX=downX=x;lastY=downY=y;longPressTriggered=false;postDelayed(longPressAction,ViewConfiguration.getLongPressTimeout());queueEvent(()->renderer.beginGesture(x,y));requestRender();return true;}
-        if(e.getActionMasked()==MotionEvent.ACTION_MOVE){if(Math.hypot(x-downX,y-downY)>touchSlop)removeCallbacks(longPressAction);if(longPressTriggered)return true;float dx=x-lastX,dy=y-lastY;lastX=x;lastY=y;queueEvent(()->{TransformUpdate update=renderer.moveGesture(dx,dy,x,y);float cameraYaw=renderer.yaw,cameraPitch=renderer.pitch;post(()->{if(update!=null&&transformListener!=null)transformListener.onTransform(update.targetNodeId,update.worldTransform);uiYaw=ViewCubeMath.normalizeYaw(cameraYaw);uiPitch=ViewCubeMath.clampPitch(cameraPitch);notifyOrientation();});});requestRender();return true;}
+        if(e.getActionMasked()==MotionEvent.ACTION_MOVE){if(Math.hypot(x-downX,y-downY)>touchSlop)removeCallbacks(longPressAction);if(longPressTriggered)return true;float dx=x-lastX,dy=y-lastY;lastX=x;lastY=y;CameraGesturePolicy.Action fallback=cameraGestures.actionFor(1,false,false,measureMode);queueEvent(()->{TransformUpdate update=renderer.moveGesture(dx,dy,x,y,fallback);float cameraYaw=renderer.yaw,cameraPitch=renderer.pitch;post(()->{if(update!=null&&transformListener!=null)transformListener.onTransform(update.targetNodeId,update.worldTransform);uiYaw=ViewCubeMath.normalizeYaw(cameraYaw);uiPitch=ViewCubeMath.clampPitch(cameraPitch);notifyOrientation();});});requestRender();return true;}
         if(e.getActionMasked()==MotionEvent.ACTION_UP||e.getActionMasked()==MotionEvent.ACTION_CANCEL){removeCallbacks(longPressAction);if(longPressTriggered){longPressTriggered=false;return true;}queueEvent(()->{if(renderer.endGesture())post(()->{if(transformCommitListener!=null)transformCommitListener.run();});});requestRender();}
         return true;
     }
@@ -206,7 +209,7 @@ public final class PointCloudView extends GLSurfaceView {
         void beginGesture(float x,float y){beginGizmo(x,y);if(!frameLockedForGizmo&&!manipulatorMode)beginClipHandle(x,y);}
         void beginGizmo(float x,float y){if(activeTargetNodeId==null||activeSceneIds.isEmpty()||!inverseMvpValid){gizmo.endDrag();frameLockedForGizmo=false;return;}updateGizmoPivot();frameLockedForGizmo=gizmo.beginDrag(x,y,transform,gizmoPivot,primaryMvp,inversePrimaryMvp,width,height);}
         void beginClipHandle(float x,float y){activeClipFace=-1;if(!clipping||!clipControlsVisible||!inverseMvpValid)return;float best=clipHandleRadius*clipHandleRadius;for(int face=0;face<6;face++){clipFaceCenter(face,faceCenter);if(!projectWorld(faceCenter[0],faceCenter[1],faceCenter[2],screenA))continue;float dx=x-screenA[0],dy=y-screenA[1],distance=dx*dx+dy*dy;if(distance<best){best=distance;activeClipFace=face;}}lastClipX=x;lastClipY=y;}
-        TransformUpdate moveGesture(float dx,float dy,float x,float y){if(activeClipFace>=0){moveClipHandle(x,y);return null;}if(gizmo.activeHandle()!=TransformGizmo.NONE){float[] next=gizmo.updateDrag(x,y,inversePrimaryMvp,width,height);if(next!=null&&activeTargetNodeId!=null){System.arraycopy(next,0,transform,0,Math.min(4,next.length));return new TransformUpdate(activeTargetNodeId,transform.clone());}return null;}if(manipulatorMode)return null;yaw=ViewCubeMath.normalizeYaw(yaw+dx*.35f);pitch=ViewCubeMath.clampPitch(pitch+dy*.35f);return null;}
+        TransformUpdate moveGesture(float dx,float dy,float x,float y,CameraGesturePolicy.Action fallback){if(activeClipFace>=0){moveClipHandle(x,y);return null;}if(gizmo.activeHandle()!=TransformGizmo.NONE){float[] next=gizmo.updateDrag(x,y,inversePrimaryMvp,width,height);if(next!=null&&activeTargetNodeId!=null){System.arraycopy(next,0,transform,0,Math.min(4,next.length));return new TransformUpdate(activeTargetNodeId,transform.clone());}return null;}if(manipulatorMode||fallback==CameraGesturePolicy.Action.OBJECT)return null;if(fallback==CameraGesturePolicy.Action.PAN){panByPixels(dx,dy);return null;}if(fallback==CameraGesturePolicy.Action.ORBIT){yaw=ViewCubeMath.normalizeYaw(yaw+dx*.35f);pitch=ViewCubeMath.clampPitch(pitch+dy*.35f);}return null;}
         void moveClipHandle(float x,float y){int axis=activeClipFace%3;clipFaceCenter(activeClipFace,faceCenter);if(!projectWorld(faceCenter[0],faceCenter[1],faceCenter[2],screenA))return;float unit=Math.max(span*.08f,(clipUpper[axis]-clipLower[axis])*.2f),ux=faceCenter[0],uy=faceCenter[1],uz=faceCenter[2];if(axis==0)ux+=unit;else if(axis==1)uy+=unit;else uz+=unit;if(!projectWorld(ux,uy,uz,screenB))return;float vx=screenB[0]-screenA[0],vy=screenB[1]-screenA[1],length=vx*vx+vy*vy;float delta;if(length>16f)delta=((x-lastClipX)*vx+(y-lastClipY)*vy)/length*unit;else delta=-(y-lastClipY)*span/Math.max(1,height);float current=activeClipFace<3?clipLower[axis]:clipUpper[axis];float[] moved=combinedClipBounds();ClipBoxMath.moveFace(moved,activeClipFace,current+delta,span*.002f);System.arraycopy(moved,0,clipLower,0,3);System.arraycopy(moved,3,clipUpper,0,3);lastClipX=x;lastClipY=y;reportClip(false);}
         boolean endGesture(){boolean transformCommitted=endGizmo();if(activeClipFace>=0){activeClipFace=-1;reportClip(true);}return transformCommitted;}
         boolean endGizmo(){boolean committed=frameLockedForGizmo;gizmo.endDrag();if(frameLockedForGizmo){frameLockedForGizmo=false;if(manipulatorMode)updateActivePivot();else updateSceneFrame();}return committed;}
