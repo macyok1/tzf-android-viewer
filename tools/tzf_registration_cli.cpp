@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <chrono>
 #include <cstdint>
 #include <exception>
 #include <iomanip>
@@ -51,8 +52,10 @@ int main(int argc, char** argv) {
         return 2;
     }
     try {
-        const auto reference = load(argv[1], 400000);
-        const auto moving = load(argv[2], 400000);
+        const auto loadStarted = std::chrono::steady_clock::now();
+        const auto reference = load(argv[1], 60000);
+        const auto moving = load(argv[2], 60000);
+        const auto registrationStarted = std::chrono::steady_clock::now();
         tzf::RegistrationResult result;
         if (argc == 7) {
             const std::array<double, 4> direct{
@@ -87,6 +90,12 @@ int main(int argc, char** argv) {
                   << "overlap=" << result.overlap << '\n'
                   << "consistency=" << result.consistency << '\n'
                   << "confidence=" << result.confidence << '\n';
+        const auto finished = std::chrono::steady_clock::now();
+        std::cout << "correctionTranslation=" << result.correctionTranslation << '\n'
+                  << "correctionYaw=" << result.correctionYaw << '\n'
+                  << "iterations=" << result.iterations << '\n'
+                  << "loadSeconds=" << std::chrono::duration<double>(registrationStarted-loadStarted).count() << '\n'
+                  << "registrationSeconds=" << std::chrono::duration<double>(finished-registrationStarted).count() << '\n';
         return result.accepted ? 0 : 3;
     } catch (const std::exception& error) {
         std::cerr << "error=" << error.what() << '\n';

@@ -183,8 +183,8 @@ Java_ru_tzfviewer_TzfNative_registerScans(JNIEnv* env, jclass,
         options.maximumInitialYawDelta = 10.0;
         options.cancellation = &registrationCancelled;
         const auto result = tzf::registerConstrained(
-            decodeRegistrationPoints(reference, 400000),
-            decodeRegistrationPoints(moving, 400000), initial, options);
+            decodeRegistrationPoints(reference, 60000),
+            decodeRegistrationPoints(moving, 60000), initial, options);
 
         return makeRegistrationResult(env, result);
     } catch (const std::exception& error) {

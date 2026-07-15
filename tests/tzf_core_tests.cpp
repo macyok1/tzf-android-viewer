@@ -199,6 +199,20 @@ int main() {
     assert(std::abs(registration.transform[2] - 0.04) < 0.02);
     assert(std::abs(registration.transform[3] - 7.0) < 0.5);
 
+    const auto manualRegistration = tzf::registerConstrained(
+        reference, moving, {0.45, 0.22, 0.02, 10.0}, registrationOptions);
+    assert(manualRegistration.accepted);
+    assert(std::abs(manualRegistration.transform[0] - 0.15) < 0.03);
+    assert(std::abs(manualRegistration.transform[1] + 0.08) < 0.03);
+    assert(std::abs(manualRegistration.transform[2] - 0.04) < 0.03);
+    assert(std::abs(manualRegistration.transform[3] - 7.0) < 0.5);
+
+    const std::array<double,4> wrongInitial{5.0, 5.0, 0.0, 0.0};
+    const auto wrongRegistration = tzf::registerConstrained(
+        reference, moving, wrongInitial, registrationOptions);
+    assert(!wrongRegistration.accepted);
+    assert(wrongRegistration.transform == wrongInitial);
+
     std::vector<tzf::Point> densityMoving = moving;
     densityMoving.reserve(moving.size() * 2);
     for (const auto point : moving)

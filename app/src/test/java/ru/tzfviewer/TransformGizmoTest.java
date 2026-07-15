@@ -35,6 +35,18 @@ public class TransformGizmoTest {
         assertArrayEquals(new float[]{2f, 3f, 4f, 105f}, result, .1f);
     }
 
+    @Test public void planarModeUsesCircleForYawInsteadOfAxis() {
+        TransformGizmo gizmo = new TransformGizmo();
+        gizmo.setPlanarOnly(true);
+        float[] start = {2f, 3f, 4f, 15f};
+        assertTrue(gizmo.beginDrag(90f, 50f, start, new float[3], IDENTITY, IDENTITY, 100, 100));
+        assertEquals(TransformGizmo.RZ, gizmo.activeHandle());
+        float[] result = gizmo.updateDrag(50f, 10f, IDENTITY, 100, 100);
+        assertEquals(105f, result[3], .1f);
+        assertEquals(2f, result[0], TOLERANCE);
+        assertEquals(3f, result[1], TOLERANCE);
+    }
+
     @Test public void collapsedZAxisDoesNotOverrideCenterPriority() {
         TransformGizmo gizmo = new TransformGizmo();
         assertTrue(gizmo.beginDrag(50f, 50f, new float[4], new float[3], IDENTITY, IDENTITY, 100, 100));

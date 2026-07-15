@@ -17,9 +17,11 @@ final class TransformGizmo {
     private float[] initialHit;
     private int activeHandle;
     private float worldScale = 1f;
+    private boolean planarOnly;
 
     int activeHandle() { return activeHandle; }
     float worldScale() { return worldScale; }
+    void setPlanarOnly(boolean enabled) { planarOnly = enabled; endDrag(); }
 
     void updateScale(float[] pivot, float[] mvp, float[] inverseMvp, int width, int height) {
         float[] screen = GizmoMath.project(pivot, mvp, width, height);
@@ -88,6 +90,24 @@ final class TransformGizmo {
         if (center == null) return NONE;
         if (Math.hypot(x - center[0], y - center[1]) <= CENTER_PICK_PX) return XY;
 
+        float ringRadius = worldScale * (planarOnly ? 1f : .75f);
+        float bestRing = Float.MAX_VALUE;
+        float[] previous = null;
+        for (int i = 0; i <= 48; i++) {
+            double angle = i * Math.PI * 2 / 48;
+            float[] world = {pivot[0] + (float) Math.cos(angle) * ringRadius,
+                    pivot[1] + (float) Math.sin(angle) * ringRadius, pivot[2]};
+            float[] current = GizmoMath.project(world, mvp, width, height);
+            if (previous != null && current != null) {
+                bestRing = Math.min(bestRing, GizmoMath.distanceToSegment(x, y, previous[0], previous[1], current[0], current[1]));
+            }
+            previous = current;
+        }
+        if(planarOnly) {
+            if(bestRing <= RING_PICK_PX) return RZ;
+            return Math.hypot(x-center[0],y-center[1]) < TARGET_RADIUS_PX-RING_PICK_PX ? XY : NONE;
+        }
+
         int bestAxis = NONE;
         float bestDistance = Float.MAX_VALUE;
         for (int handle = X; handle <= Z; handle++) {
@@ -101,19 +121,6 @@ final class TransformGizmo {
         }
         if (bestAxis != NONE) return bestAxis;
 
-        float ringRadius = worldScale * .75f;
-        float bestRing = Float.MAX_VALUE;
-        float[] previous = null;
-        for (int i = 0; i <= 48; i++) {
-            double angle = i * Math.PI * 2 / 48;
-            float[] world = {pivot[0] + (float) Math.cos(angle) * ringRadius,
-                    pivot[1] + (float) Math.sin(angle) * ringRadius, pivot[2]};
-            float[] current = GizmoMath.project(world, mvp, width, height);
-            if (previous != null && current != null) {
-                bestRing = Math.min(bestRing, GizmoMath.distanceToSegment(x, y, previous[0], previous[1], current[0], current[1]));
-            }
-            previous = current;
-        }
         if(bestRing <= RING_PICK_PX) return RZ;
         return Math.hypot(x-center[0],y-center[1]) <= TARGET_RADIUS_PX ? XY : NONE;
     }

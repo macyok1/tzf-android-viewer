@@ -13,7 +13,12 @@ namespace tzf {
 namespace {
 
 struct Vec3 { double x{}, y{}, z{}; };
-struct Sample { Vec3 point; Vec3 normal; bool hasNormal{}; };
+struct Sample {
+    Vec3 point;
+    Vec3 normal;
+    double planarity{};
+    bool hasNormal{};
+};
 struct Cell { int x{}, y{}, z{}; bool operator==(const Cell&) const = default; };
 struct CellHash {
     std::size_t operator()(const Cell& c) const noexcept {
@@ -28,7 +33,6 @@ Vec3 add(Vec3 a, Vec3 b) { return {a.x+b.x,a.y+b.y,a.z+b.z}; }
 Vec3 sub(Vec3 a, Vec3 b) { return {a.x-b.x,a.y-b.y,a.z-b.z}; }
 Vec3 mul(Vec3 a, double s) { return {a.x*s,a.y*s,a.z*s}; }
 double dot(Vec3 a, Vec3 b) { return a.x*b.x+a.y*b.y+a.z*b.z; }
-Vec3 cross(Vec3 a, Vec3 b) { return {a.y*b.z-a.z*b.y,a.z*b.x-a.x*b.z,a.x*b.y-a.y*b.x}; }
 double length2(Vec3 a) { return dot(a,a); }
 bool normalize(Vec3& a) { const auto l=std::sqrt(length2(a)); if(!std::isfinite(l)||l<1e-12)return false; a=mul(a,1/l);return true; }
 Vec3 toVec(Point p) { return {p.x,p.y,p.z}; }
@@ -45,6 +49,16 @@ std::vector<Vec3> downsample(const std::vector<Point>& points,double voxel) {
     return result;
 }
 
+void limitSample(std::vector<Vec3>& points, std::size_t limit) {
+    if (limit == 0 || points.size() <= limit) return;
+    std::vector<Vec3> sampled;
+    sampled.reserve(limit);
+    const double stride = static_cast<double>(points.size()) / limit;
+    for (std::size_t i = 0; i < limit; ++i)
+        sampled.push_back(points[static_cast<std::size_t>(i * stride)]);
+    points = std::move(sampled);
+}
+
 class Index {
 public:
     Index(const std::vector<Vec3>& points,double cellSize):points_(points),cellSize_(cellSize){cells_.reserve(points.size()*2);for(std::size_t i=0;i<points.size();++i)cells_[cellFor(points[i],cellSize)].push_back(i);}
@@ -54,9 +68,92 @@ private:
     const std::vector<Vec3>& points_;double cellSize_;std::unordered_map<Cell,std::vector<std::size_t>,CellHash> cells_;
 };
 
-std::vector<Sample> normals(const std::vector<Vec3>& points,double radius){
-    Index index(points,radius);std::vector<Sample> out(points.size());
-    for(std::size_t i=0;i<points.size();++i){out[i].point=points[i];std::array<std::pair<double,std::size_t>,16> near{};for(auto& n:near)n={std::numeric_limits<double>::infinity(),0};index.nearby(points[i],1,[&](std::size_t j){if(i==j)return;double d=length2(sub(points[j],points[i]));if(d>radius*radius)return;auto worst=std::max_element(near.begin(),near.end());if(d<worst->first)*worst={d,j};});std::sort(near.begin(),near.end());if(!std::isfinite(near[1].first))continue;Vec3 a=sub(points[near[0].second],points[i]);Vec3 best{};double bestArea=0;for(std::size_t k=1;k<near.size()&&std::isfinite(near[k].first);++k){auto n=cross(a,sub(points[near[k].second],points[i]));double area=length2(n);if(area>bestArea){bestArea=area;best=n;}}if(bestArea>radius*radius*radius*radius*1e-6&&normalize(best)){out[i].normal=best;out[i].hasNormal=true;}}
+struct EigenSystem {
+    std::array<double, 3> values{};
+    std::array<Vec3, 3> vectors{};
+};
+
+EigenSystem symmetricEigenSystem(double matrix[3][3]) {
+    double vectors[3][3]{{1,0,0},{0,1,0},{0,0,1}};
+    for (int sweep = 0; sweep < 16; ++sweep) {
+        int p = 0, q = 1;
+        if (std::abs(matrix[0][2]) > std::abs(matrix[p][q])) { p = 0; q = 2; }
+        if (std::abs(matrix[1][2]) > std::abs(matrix[p][q])) { p = 1; q = 2; }
+        if (std::abs(matrix[p][q]) < 1e-12) break;
+        const double app = matrix[p][p], aqq = matrix[q][q];
+        const double apq = matrix[p][q];
+        const double angle = .5 * std::atan2(2.0 * apq, aqq - app);
+        const double c = std::cos(angle), s = std::sin(angle);
+        for (int k = 0; k < 3; ++k) {
+            if (k == p || k == q) continue;
+            const double akp = matrix[k][p], akq = matrix[k][q];
+            matrix[k][p] = matrix[p][k] = c * akp - s * akq;
+            matrix[k][q] = matrix[q][k] = s * akp + c * akq;
+        }
+        matrix[p][p] = c*c*app - 2.0*s*c*apq + s*s*aqq;
+        matrix[q][q] = s*s*app + 2.0*s*c*apq + c*c*aqq;
+        matrix[p][q] = matrix[q][p] = 0;
+        for (int k = 0; k < 3; ++k) {
+            const double vkp = vectors[k][p], vkq = vectors[k][q];
+            vectors[k][p] = c * vkp - s * vkq;
+            vectors[k][q] = s * vkp + c * vkq;
+        }
+    }
+    std::array<int, 3> order{0, 1, 2};
+    std::sort(order.begin(), order.end(), [&](int a, int b) {
+        return matrix[a][a] < matrix[b][b];
+    });
+    EigenSystem result;
+    for (int i = 0; i < 3; ++i) {
+        const int source = order[i];
+        result.values[i] = std::max(0.0, matrix[source][source]);
+        result.vectors[i] = {vectors[0][source], vectors[1][source],
+                             vectors[2][source]};
+    }
+    return result;
+}
+
+std::vector<Sample> normals(const std::vector<Vec3>& points, double radius) {
+    Index index(points, radius);
+    std::vector<Sample> out(points.size());
+    const double radiusSquared = radius * radius;
+    for (std::size_t i = 0; i < points.size(); ++i) {
+        out[i].point = points[i];
+        std::size_t count = 0;
+        Vec3 sum{};
+        double products[3][3]{};
+        index.nearby(points[i], 1, [&](std::size_t j) {
+            if (length2(sub(points[j], points[i])) > radiusSquared) return;
+            const Vec3 p = points[j];
+            ++count;
+            sum = add(sum, p);
+            const double values[3]{p.x, p.y, p.z};
+            for (int row = 0; row < 3; ++row)
+                for (int column = row; column < 3; ++column)
+                    products[row][column] += values[row] * values[column];
+        });
+        if (count < 8) continue;
+        const Vec3 mean = mul(sum, 1.0 / count);
+        const double means[3]{mean.x, mean.y, mean.z};
+        double covariance[3][3]{};
+        for (int row = 0; row < 3; ++row) {
+            for (int column = row; column < 3; ++column) {
+                covariance[row][column] = covariance[column][row] =
+                    products[row][column] / count - means[row] * means[column];
+            }
+        }
+        const auto eigen = symmetricEigenSystem(covariance);
+        const double trace = eigen.values[0] + eigen.values[1] + eigen.values[2];
+        if (trace <= 1e-12 || eigen.values[2] <= 1e-12) continue;
+        Vec3 normal = eigen.vectors[0];
+        if (!normalize(normal)) continue;
+        const double planarity =
+            (eigen.values[1] - eigen.values[0]) / eigen.values[2];
+        const double surfaceVariation = eigen.values[0] / trace;
+        out[i].normal = normal;
+        out[i].planarity = std::clamp(planarity, 0.0, 1.0);
+        out[i].hasNormal = out[i].planarity >= .08 && surfaceVariation <= .12;
+    }
     return out;
 }
 
@@ -151,8 +248,8 @@ Metrics surfaceMetrics(const std::vector<Vec3>& reference,
                        double rmsLimit, double p95Limit) {
     Metrics m;
     if (reference.empty() || moving.empty()) return m;
-    const auto referenceSamples = normals(reference, maxDistance * 1.8);
-    const auto movingSamples = normals(moving, maxDistance * 1.8);
+    const auto referenceSamples = normals(reference, maxDistance * 1.5);
+    const auto movingSamples = normals(moving, maxDistance * 1.5);
     std::vector<Vec3> transformed;
     transformed.reserve(moving.size());
     for (const auto point : moving)
@@ -165,7 +262,6 @@ Metrics surfaceMetrics(const std::vector<Vec3>& reference,
         return Vec3{c * normal.x - s * normal.y,
                     s * normal.x + c * normal.y, normal.z};
     };
-    double squaredResiduals = 0;
     std::size_t forward = 0, backward = 0, reciprocal = 0;
     for (std::size_t source = 0; source < transformed.size(); ++source) {
         std::size_t nearest{};
@@ -183,7 +279,6 @@ Metrics surfaceMetrics(const std::vector<Vec3>& reference,
             sub(transformed[source], reference[nearest]),
             referenceSamples[nearest].normal));
         m.distances.push_back(residual);
-        squaredResiduals += residual * residual;
     }
     for (std::size_t source = 0; source < reference.size(); ++source) {
         std::size_t nearest{};
@@ -196,7 +291,6 @@ Metrics surfaceMetrics(const std::vector<Vec3>& reference,
             sub(reference[source], transformed[nearest]),
             rotatedNormal(movingSamples[nearest].normal)));
         m.distances.push_back(residual);
-        squaredResiduals += residual * residual;
     }
     const double forwardOverlap = static_cast<double>(forward) / moving.size();
     const double backwardOverlap = static_cast<double>(backward) / reference.size();
@@ -206,8 +300,13 @@ Metrics surfaceMetrics(const std::vector<Vec3>& reference,
     m.reciprocalRatio = forward == 0 ? 0 :
         static_cast<double>(reciprocal) / forward;
     if (!m.distances.empty()) {
-        m.rms = std::sqrt(squaredResiduals / m.distances.size());
         std::sort(m.distances.begin(), m.distances.end());
+        const std::size_t rmsCount = std::max<std::size_t>(
+            1, static_cast<std::size_t>(m.distances.size() * .90));
+        double trimmedSquares = 0;
+        for (std::size_t i = 0; i < rmsCount; ++i)
+            trimmedSquares += m.distances[i] * m.distances[i];
+        m.rms = std::sqrt(trimmedSquares / rmsCount);
         m.p95 = m.distances[static_cast<std::size_t>(
             (m.distances.size() - 1) * .95)];
         const double median = m.distances[m.distances.size() / 2];
@@ -569,11 +668,85 @@ std::vector<std::array<double,4>> featureHypotheses(const std::vector<Point>& re
     return hypotheses;
 }
 
-struct Correspondence { double residual{},absolute{}; std::array<double,4> jacobian{}; };
-bool refineIteration(const std::vector<Vec3>& reference,const std::vector<Sample>& samples,const Index& referenceIndex,const std::vector<Vec3>& moving,Vec3 pivot,std::array<double,4>& transform,double voxel,double minimumOverlap,double delta[4]){
-    const double maximum=voxel*3.0;std::vector<Vec3> transformed;transformed.reserve(moving.size());for(auto p:moving)transformed.push_back(transformPoint(p,pivot,transform));Index movingIndex(transformed,voxel*2.5);std::vector<Correspondence> pairs;pairs.reserve(moving.size());
-    std::size_t forwardMatches=0;for(std::size_t sourceIndex=0;sourceIndex<transformed.size();++sourceIndex){const Vec3 p=transformed[sourceIndex];std::size_t nearest{};double distance2{};if(!referenceIndex.nearest(p,maximum,nearest,distance2)||!samples[nearest].hasNormal)continue;++forwardMatches;std::size_t reciprocal{};double reciprocalDistance{};if(!movingIndex.nearest(reference[nearest],maximum,reciprocal,reciprocalDistance)||reciprocal!=sourceIndex)continue;const Vec3 n=samples[nearest].normal;const double residual=dot(sub(p,samples[nearest].point),n);const Vec3 relative=sub(p,{pivot.x+transform[0],pivot.y+transform[1],pivot.z+transform[2]});pairs.push_back({residual,std::abs(residual),{n.x,n.y,n.z,-relative.y*n.x+relative.x*n.y}});}
-    const double forwardOverlap=moving.empty()?0.0:static_cast<double>(forwardMatches)/moving.size();const double reciprocalSupport=forwardMatches==0?0.0:static_cast<double>(pairs.size())/forwardMatches;if(pairs.size()<30||forwardOverlap<minimumOverlap||reciprocalSupport<.10)return false;std::sort(pairs.begin(),pairs.end(),[](const auto&a,const auto&b){return a.absolute<b.absolute;});const std::size_t keep=std::max<std::size_t>(30,static_cast<std::size_t>(pairs.size()*.85));double normal[4][4]{},rhs[4]{};for(std::size_t i=0;i<keep;++i){const auto& pair=pairs[i];const double weight=pair.absolute<=voxel?1.0:voxel/pair.absolute;for(int r=0;r<4;++r){rhs[r]+=-weight*pair.jacobian[r]*pair.residual;for(int c=0;c<4;++c)normal[r][c]+=weight*pair.jacobian[r]*pair.jacobian[c];}}if(!solve4(normal,rhs,delta))return false;for(int i=0;i<3;++i)transform[i]+=delta[i];transform[3]+=delta[3]*180.0/3.14159265358979323846;return true;
+struct Correspondence {
+    double residual{}, absolute{}, distance{};
+    std::array<double,4> jacobian{};
+    Vec3 offset{}, relative{};
+};
+
+bool refineIteration(const std::vector<Vec3>& reference,
+                     const std::vector<Sample>& samples,
+                     const Index& referenceIndex,
+                     const std::vector<Vec3>& moving, Vec3 pivot,
+                     std::array<double,4>& transform, double voxel,
+                     double minimumOverlap, double delta[4]) {
+    const double maximum = voxel * 2.5;
+    std::vector<Vec3> transformed;
+    transformed.reserve(moving.size());
+    for (auto point : moving)
+        transformed.push_back(transformPoint(point, pivot, transform));
+    std::vector<Correspondence> pairs;
+    pairs.reserve(moving.size());
+    std::size_t forwardMatches = 0;
+    for (const Vec3 point : transformed) {
+        std::size_t nearest{};
+        double distance2{};
+        if (!referenceIndex.nearest(point, maximum, nearest, distance2)) continue;
+        ++forwardMatches;
+        if (!samples[nearest].hasNormal) continue;
+        const Vec3 normal = samples[nearest].normal;
+        const Vec3 offset = sub(point, samples[nearest].point);
+        const double residual = dot(offset, normal);
+        const Vec3 relative = sub(point, {pivot.x + transform[0],
+                                         pivot.y + transform[1],
+                                         pivot.z + transform[2]});
+        pairs.push_back({residual, std::abs(residual), std::sqrt(distance2),
+                         {normal.x, normal.y, normal.z,
+                          -relative.y * normal.x + relative.x * normal.y},
+                         offset, relative});
+    }
+    const double forwardOverlap = moving.empty() ? 0.0 :
+        static_cast<double>(forwardMatches) / moving.size();
+    if (pairs.size() < 30 || forwardOverlap < minimumOverlap) return false;
+    std::sort(pairs.begin(), pairs.end(), [](const auto& a, const auto& b) {
+        return a.absolute + .03 * a.distance <
+               b.absolute + .03 * b.distance;
+    });
+    const std::size_t keep = std::max<std::size_t>(
+        30, static_cast<std::size_t>(pairs.size() * .80));
+    double normalMatrix[4][4]{}, rhs[4]{};
+    const auto addEquation = [&](const std::array<double,4>& jacobian,
+                                 double residual, double weight) {
+        for (int row = 0; row < 4; ++row) {
+            rhs[row] += -weight * jacobian[row] * residual;
+            for (int column = 0; column < 4; ++column)
+                normalMatrix[row][column] +=
+                    weight * jacobian[row] * jacobian[column];
+        }
+    };
+    for (std::size_t i = 0; i < keep; ++i) {
+        const auto& pair = pairs[i];
+        const double weight = pair.absolute <= voxel * .5 ? 1.0 :
+                              voxel * .5 / pair.absolute;
+        addEquation(pair.jacobian, pair.residual, weight);
+        const double pointWeight = .05 * weight *
+            std::min(1.0, voxel / std::max(pair.distance, 1e-9));
+        addEquation({1, 0, 0, -pair.relative.y}, pair.offset.x, pointWeight);
+        addEquation({0, 1, 0,  pair.relative.x}, pair.offset.y, pointWeight);
+        addEquation({0, 0, 1, 0}, pair.offset.z, pointWeight);
+    }
+    if (!solve4(normalMatrix, rhs, delta)) return false;
+    const double translationLength = std::sqrt(
+        delta[0]*delta[0] + delta[1]*delta[1] + delta[2]*delta[2]);
+    if (translationLength > voxel * .75) {
+        const double scale = voxel * .75 / translationLength;
+        for (int i = 0; i < 3; ++i) delta[i] *= scale;
+    }
+    const double yawLimit = 1.5 * 3.14159265358979323846 / 180.0;
+    delta[3] = std::clamp(delta[3], -yawLimit, yawLimit);
+    for (int i = 0; i < 3; ++i) transform[i] += delta[i];
+    transform[3] += delta[3] * 180.0 / 3.14159265358979323846;
+    return true;
 }
 
 void estimateCandidateZ(const ProjectionGrid& reference,
@@ -622,6 +795,59 @@ double quickHypothesisScore(const Index& referenceIndex,
     return overlap - .30 * meanDistance / maximumDistance;
 }
 
+std::array<double, 4> localProjectionSeed(
+    const std::vector<Point>& reference, const std::vector<Point>& moving,
+    Vec3 pivot, const std::array<double, 4>& initial, double span,
+    double millimetreScale, const std::atomic_bool* cancellation) {
+    const double cellSize = std::clamp(
+        span / 500.0, 150.0 * millimetreScale,
+        400.0 * millimetreScale);
+    auto referencePoints = downsample(reference, cellSize);
+    auto movingPoints = downsample(moving, cellSize);
+    limitSample(referencePoints, 40000);
+    limitSample(movingPoints, 12000);
+    if (referencePoints.size() < 30 || movingPoints.size() < 30) return initial;
+    const auto referenceGrid = buildProjection(referencePoints, cellSize);
+    const auto directPose = [&](const std::array<double, 4>& transform) {
+        const Vec3 rotatedPivot = rotateZ(pivot, transform[3]);
+        return ProjectionPose{{transform[0] + pivot.x - rotatedPivot.x,
+                               transform[1] + pivot.y - rotatedPivot.y,
+                               transform[2]}, transform[3], 0};
+    };
+    const auto score = [&](const std::array<double, 4>& transform) {
+        return projectionScore(referenceGrid, movingPoints, cellSize,
+                               directPose(transform));
+    };
+    std::array<double, 4> best = initial;
+    const double initialScore = score(initial);
+    double bestScore = initialScore;
+    const auto search = [&](const std::array<double, 4>& center,
+                            double translationStep, int translationSteps,
+                            double yawStep, int yawSteps) {
+        for (int yaw = -yawSteps; yaw <= yawSteps; ++yaw) {
+            for (int x = -translationSteps; x <= translationSteps; ++x) {
+                for (int y = -translationSteps; y <= translationSteps; ++y) {
+                    if (cancellation && cancellation->load()) return;
+                    auto candidate = center;
+                    candidate[0] += x * translationStep;
+                    candidate[1] += y * translationStep;
+                    candidate[3] += yaw * yawStep;
+                    const double candidateScore = score(candidate);
+                    if (candidateScore > bestScore) {
+                        best = candidate;
+                        bestScore = candidateScore;
+                    }
+                }
+            }
+        }
+    };
+    search(initial, cellSize, 4, 2.0, 2);
+    const auto coarseBest = best;
+    search(coarseBest, cellSize * .5, 2, .5, 2);
+    const double requiredGain = std::max(.015, initialScore * .04);
+    return bestScore >= initialScore + requiredGain ? best : initial;
+}
+
 std::vector<std::array<double, 4>> rankHypotheses(
     const std::vector<Point>& reference, const std::vector<Point>& moving,
     std::vector<std::array<double, 4>> hypotheses, double span,
@@ -633,7 +859,7 @@ std::vector<std::array<double, 4>> rankHypotheses(
     const auto coarseReference = downsample(reference, voxel);
     const auto coarseMoving = downsample(moving, voxel);
     const Vec3 pivot = center(moving);
-    const Index referenceIndex(coarseReference, voxel);
+    const Index referenceIndex(coarseReference, voxel * 3.0);
     const auto projection = buildProjection(coarseReference, voxel * 1.5);
     std::vector<std::pair<double, std::array<double, 4>>> scored;
     scored.reserve(hypotheses.size());
@@ -663,7 +889,7 @@ std::vector<std::array<double, 4>> rankHypotheses(
             }
         }
         if (!duplicate) ranked.push_back(hypothesis);
-        if (ranked.size() >= 8) break;
+        if (ranked.size() >= 3) break;
     }
     return ranked;
 }
@@ -693,19 +919,23 @@ RegistrationResult registerConstrained(
         return reject("invalid registration unit scale");
     const double mm = options.millimetreScale;
     const Vec3 pivot = center(moving);
+    result.transform = localProjectionSeed(
+        reference, moving, pivot, initial, span, mm, options.cancellation);
     const std::array<double, 4> voxels{
         std::clamp(span / 80.0, 250.0 * mm, 1500.0 * mm),
         std::clamp(span / 200.0, 100.0 * mm, 500.0 * mm),
-        std::clamp(span / 600.0, 30.0 * mm, 150.0 * mm),
-        std::clamp(span / 1000.0, 20.0 * mm, 120.0 * mm)};
+        std::clamp(span / 400.0, 50.0 * mm, 250.0 * mm),
+        std::clamp(span / 600.0, 40.0 * mm, 200.0 * mm)};
     for (double voxel : voxels) {
         if (options.cancellation && options.cancellation->load())
             return reject("cancelled");
         auto ref = downsample(reference, voxel);
         auto mov = downsample(moving, voxel);
+        limitSample(ref, options.maxInputPoints);
+        limitSample(mov, options.maxInputPoints);
         if (ref.size() < 30 || mov.size() < 30)
             return reject("not enough spatial coverage");
-        auto samples = normals(ref, voxel * 5.5);
+        auto samples = normals(ref, voxel * 4.0);
         Index index(ref, voxel * 2.5);
         for (int iteration = 0; iteration < options.iterationsPerLevel;
              ++iteration) {
@@ -738,8 +968,8 @@ RegistrationResult registerConstrained(
             }
             ++result.iterations;
             if (std::sqrt(delta[0] * delta[0] + delta[1] * delta[1] +
-                          delta[2] * delta[2]) < voxel * 1e-4 &&
-                std::abs(delta[3]) < 1e-5) {
+                           delta[2] * delta[2]) < voxel * 2e-3 &&
+                std::abs(delta[3]) < 1e-4) {
                 break;
             }
         }
@@ -747,14 +977,16 @@ RegistrationResult registerConstrained(
     const double validationVoxel = voxels.back();
     const double effectiveRmsLimit = options.adaptiveResidualLimits ?
         std::max(options.rmsLimit,
-                 std::clamp(validationVoxel * .12, 3.0 * mm, 12.0 * mm)) :
+                  std::clamp(validationVoxel * .25, 4.0 * mm, 8.0 * mm)) :
         options.rmsLimit;
     const double effectiveP95Limit = options.adaptiveResidualLimits ?
         std::max(options.p95Limit,
-                 std::clamp(validationVoxel * .35, 8.0 * mm, 30.0 * mm)) :
+                  std::clamp(validationVoxel * .40, 8.0 * mm, 15.0 * mm)) :
         options.p95Limit;
     auto controlRef = downsample(reference, validationVoxel);
     auto controlMov = downsample(moving, validationVoxel);
+    limitSample(controlRef, options.maxInputPoints);
+    limitSample(controlMov, options.maxInputPoints);
     auto quality = surfaceMetrics(
         controlRef, controlMov, pivot, result.transform,
         validationVoxel * 3.0, effectiveRmsLimit, effectiveP95Limit);

@@ -12,11 +12,11 @@
 namespace tzf {
 
 struct RegistrationOptions {
-    std::size_t maxInputPoints{400000};
-    int iterationsPerLevel{30};
+    std::size_t maxInputPoints{40000};
+    int iterationsPerLevel{12};
     double rmsLimit{0.003};
     double p95Limit{0.008};
-    double minimumOverlap{0.25};
+    double minimumOverlap{0.12};
     double minimumConsistency{0.55};
     double minimumConfidence{73.0};
     double millimetreScale{.001};

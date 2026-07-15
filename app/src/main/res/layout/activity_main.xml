@@ -64,6 +64,8 @@
             android:gravity="center_vertical" android:maxLines="1" android:ellipsize="end" android:paddingHorizontal="6dp" android:text="R  не выбран" android:textColor="@color/cyan" />
         <TextView android:id="@+id/movingLabel" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1"
             android:gravity="center_vertical" android:maxLines="1" android:ellipsize="end" android:paddingHorizontal="6dp" android:text="M  не выбран" android:textColor="@color/amber" />
+        <Button android:id="@+id/manipulatorStitch" style="@style/ToolButton" android:layout_width="94dp" android:layout_height="48dp" android:text="Сшить" android:visibility="gone" />
+        <Button android:id="@+id/exitManipulator" style="@style/ToolButton" android:layout_width="78dp" android:layout_height="48dp" android:text="Выйти" android:visibility="gone" />
         <Button android:id="@+id/pairDetails" style="@style/CompactTool" android:layout_width="44dp" android:layout_height="48dp" android:text="M" android:textSize="12sp" android:contentDescription="Преобразование M" />
         <ProgressBar android:id="@+id/registrationProgress" style="?android:attr/progressBarStyleHorizontal" android:layout_width="72dp" android:layout_height="5dp" android:indeterminate="false" android:max="100" android:visibility="gone" />
         <ProgressBar android:id="@+id/x7Progress" style="?android:attr/progressBarStyleHorizontal" android:layout_width="72dp" android:layout_height="5dp" android:indeterminate="false" android:max="100" android:visibility="gone" />
