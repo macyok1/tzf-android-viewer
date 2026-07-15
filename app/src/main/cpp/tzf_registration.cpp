@@ -4,10 +4,14 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#ifdef TZF_REGISTRATION_DEBUG
+#include <cstdio>
+#endif
 #include <cstdint>
 #include <limits>
 #include <numeric>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace tzf {
 namespace {
@@ -236,9 +240,10 @@ Metrics metrics(const std::vector<Vec3>& reference,
         std::clamp(1.0 - m.p95 / p95Limit, 0.0, 1.0) : 0.0;
     m.residualQuality = (rmsQuality + p95Quality) * .5;
     m.consistency =
-        .15 * std::clamp(m.reciprocalRatio, 0.0, 1.0) +
-        .45 * std::clamp(m.overlapBalance, 0.0, 1.0) +
-        .40 * std::clamp(m.residualStability, 0.0, 1.0);
+        .05 * std::clamp(m.reciprocalRatio, 0.0, 1.0) +
+        .30 * std::clamp(m.overlapBalance, 0.0, 1.0) +
+        .45 * std::clamp(m.residualStability, 0.0, 1.0) +
+        .20 * std::clamp(m.overlap / .5, 0.0, 1.0);
     return m;
 }
 
@@ -319,9 +324,10 @@ Metrics surfaceMetrics(const std::vector<Vec3>& reference,
         1.0 - m.p95 / std::max(p95Limit, 1e-9), 0.0, 1.0);
     m.residualQuality = (rmsQuality + p95Quality) * .5;
     m.consistency =
-        .15 * std::clamp(m.reciprocalRatio, 0.0, 1.0) +
-        .45 * std::clamp(m.overlapBalance, 0.0, 1.0) +
-        .40 * std::clamp(m.residualStability, 0.0, 1.0);
+        .05 * std::clamp(m.reciprocalRatio, 0.0, 1.0) +
+        .30 * std::clamp(m.overlapBalance, 0.0, 1.0) +
+        .45 * std::clamp(m.residualStability, 0.0, 1.0) +
+        .20 * std::clamp(m.overlap / .5, 0.0, 1.0);
     return m;
 }
 
@@ -342,9 +348,11 @@ std::vector<std::array<double,4>> planeHypotheses(const std::vector<Point>& refe
 
 struct ProjectionCell {
     int count{};
+    int bottomChain{};
     double sumX{}, sumY{}, sumZ{};
     double minZ{std::numeric_limits<double>::infinity()};
     double maxZ{-std::numeric_limits<double>::infinity()};
+    std::vector<int> occupiedZ;
 };
 
 using ProjectionGrid = std::unordered_map<Cell, ProjectionCell, CellHash>;
@@ -352,6 +360,10 @@ using ProjectionGrid = std::unordered_map<Cell, ProjectionCell, CellHash>;
 ProjectionGrid buildProjection(const std::vector<Vec3>& points,
                                double cellSize) {
     ProjectionGrid grid;
+    // BlackLion never uses a finer Z voxel than its XY template pixel for
+    // this image. A quarter-cell Z layer fragments the 60k preview into
+    // disconnected samples and destroys tank/wall chains.
+    const double zResolution = std::max(cellSize, 1e-6);
     for (const auto& point : points) {
         Cell key{static_cast<int>(std::floor(point.x / cellSize)),
                  static_cast<int>(std::floor(point.y / cellSize)), 0};
@@ -362,6 +374,22 @@ ProjectionGrid buildProjection(const std::vector<Vec3>& points,
         cell.sumZ += point.z;
         cell.minZ = std::min(cell.minZ, point.z);
         cell.maxZ = std::max(cell.maxZ, point.z);
+        cell.occupiedZ.push_back(static_cast<int>(
+            std::floor(point.z / zResolution)));
+    }
+    for (auto& [_, cell] : grid) {
+        std::sort(cell.occupiedZ.begin(), cell.occupiedZ.end());
+        cell.occupiedZ.erase(
+            std::unique(cell.occupiedZ.begin(), cell.occupiedZ.end()),
+            cell.occupiedZ.end());
+        if (!cell.occupiedZ.empty()) {
+            cell.bottomChain = 1;
+            for (std::size_t i = 1; i < cell.occupiedZ.size(); ++i) {
+                const int gap = cell.occupiedZ[i] - cell.occupiedZ[i - 1];
+                if (gap > 2) break;
+                cell.bottomChain += gap;
+            }
+        }
     }
     return grid;
 }
@@ -372,10 +400,10 @@ std::vector<ProjectionCell> projectionFeatures(const ProjectionGrid& grid,
     std::vector<std::pair<double, ProjectionCell>> ranked;
     ranked.reserve(grid.size());
     for (const auto& [_, cell] : grid) {
-        if (cell.count < 2) continue;
-        const double range = std::max(0.0, cell.maxZ - cell.minZ);
-        const double structural = 1.0 + std::min(8.0, range / cellSize);
-        ranked.push_back({-cell.count * structural, cell});
+        if (cell.count < 2 || cell.bottomChain < 3) continue;
+        const double density = std::log1p(static_cast<double>(cell.count));
+        const double structural = cell.bottomChain * (1.0 + .10 * density);
+        ranked.push_back({-structural, cell});
     }
     std::stable_sort(ranked.begin(), ranked.end(),
                      [](const auto& a, const auto& b) {
@@ -391,6 +419,118 @@ std::vector<ProjectionCell> projectionFeatures(const ProjectionGrid& grid,
     return out;
 }
 
+std::vector<ProjectionCell> projectionVoteFeatures(
+    const ProjectionGrid& grid, std::size_t limit) {
+    struct Candidate {
+        Cell key{};
+        const ProjectionCell* cell{};
+    };
+    std::vector<Candidate> candidates;
+    candidates.reserve(grid.size());
+    int minX = std::numeric_limits<int>::max();
+    int minY = std::numeric_limits<int>::max();
+    int maxX = std::numeric_limits<int>::min();
+    int maxY = std::numeric_limits<int>::min();
+    for (const auto& [key, cell] : grid) {
+        if (cell.bottomChain <= 0) continue;
+        candidates.push_back({key, &cell});
+        minX = std::min(minX, key.x);
+        minY = std::min(minY, key.y);
+        maxX = std::max(maxX, key.x);
+        maxY = std::max(maxY, key.y);
+    }
+    if (candidates.size() <= limit) {
+        std::vector<ProjectionCell> out;
+        out.reserve(candidates.size());
+        for (const auto& candidate : candidates)
+            out.push_back(*candidate.cell);
+        return out;
+    }
+
+    const auto stronger = [](const Candidate& a, const Candidate& b) {
+        if (a.cell->bottomChain != b.cell->bottomChain)
+            return a.cell->bottomChain > b.cell->bottomChain;
+        if (a.cell->count != b.cell->count)
+            return a.cell->count > b.cell->count;
+        if (a.key.x != b.key.x) return a.key.x < b.key.x;
+        return a.key.y < b.key.y;
+    };
+    std::stable_sort(candidates.begin(), candidates.end(), stronger);
+
+    std::vector<ProjectionCell> out;
+    out.reserve(limit);
+    std::unordered_set<Cell, CellHash> selected;
+    selected.reserve(limit * 2);
+    const std::size_t structuralLimit = std::max<std::size_t>(1, limit / 4);
+    for (const auto& candidate : candidates) {
+        if (out.size() >= structuralLimit) break;
+        selected.insert(candidate.key);
+        out.push_back(*candidate.cell);
+    }
+
+    // A chain-only shortlist misses the real translation when both scans see
+    // different pieces of the same wall. Keep the strongest chain (including
+    // lengths one and two) in evenly distributed image regions as a cheap,
+    // deterministic approximation of Picasso's complete-image CCORR.
+    const std::size_t spatialTarget = limit - out.size();
+    const int bins = std::max(1, static_cast<int>(
+        std::ceil(std::sqrt(static_cast<double>(spatialTarget)))));
+    std::unordered_map<Cell, Candidate, CellHash> spatial;
+    spatial.reserve(static_cast<std::size_t>(bins * bins));
+    const int rangeX = std::max(1, maxX - minX + 1);
+    const int rangeY = std::max(1, maxY - minY + 1);
+    for (const auto& candidate : candidates) {
+        const Cell bucket{
+            std::min(bins - 1,
+                     static_cast<int>((static_cast<long long>(
+                         candidate.key.x - minX) * bins) / rangeX)),
+            std::min(bins - 1,
+                     static_cast<int>((static_cast<long long>(
+                         candidate.key.y - minY) * bins) / rangeY)),
+            0};
+        const auto found = spatial.find(bucket);
+        if (found == spatial.end() || stronger(candidate, found->second))
+            spatial[bucket] = candidate;
+    }
+    std::vector<Candidate> distributed;
+    distributed.reserve(spatial.size());
+    for (const auto& [_, candidate] : spatial)
+        distributed.push_back(candidate);
+    std::stable_sort(distributed.begin(), distributed.end(), stronger);
+    for (const auto& candidate : distributed) {
+        if (out.size() >= limit) break;
+        if (selected.insert(candidate.key).second)
+            out.push_back(*candidate.cell);
+    }
+    for (const auto& candidate : candidates) {
+        if (out.size() >= limit) break;
+        if (selected.insert(candidate.key).second)
+            out.push_back(*candidate.cell);
+    }
+    return out;
+}
+
+std::vector<ProjectionCell> projectionImageCells(const ProjectionGrid& grid,
+                                                 std::size_t limit) {
+    std::vector<ProjectionCell> out;
+    out.reserve(std::min(limit, grid.size()));
+    if (grid.size() <= limit) {
+        for (const auto& [_, cell] : grid) out.push_back(cell);
+        return out;
+    }
+    std::vector<std::pair<int, ProjectionCell>> ranked;
+    ranked.reserve(grid.size());
+    for (const auto& [_, cell] : grid)
+        ranked.push_back({-cell.bottomChain, cell});
+    std::stable_sort(ranked.begin(), ranked.end(),
+                     [](const auto& a, const auto& b) {
+                         return a.first < b.first;
+                     });
+    for (std::size_t i = 0; i < limit; ++i)
+        out.push_back(ranked[i].second);
+    return out;
+}
+
 Vec3 projectionCenter(const ProjectionCell& cell) {
     const double count = std::max(1, cell.count);
     return {cell.sumX / count, cell.sumY / count, cell.sumZ / count};
@@ -398,6 +538,7 @@ Vec3 projectionCenter(const ProjectionCell& cell) {
 
 struct ProjectionVote {
     int count{};
+    double weight{};
     Vec3 translation{};
 };
 
@@ -407,32 +548,70 @@ struct ProjectionPose {
     double score{};
 };
 
+using SparseProjectionImage = std::unordered_map<Cell, int, CellHash>;
+
+SparseProjectionImage rotateProjectionImage(
+    const std::vector<ProjectionCell>& moving, double cellSize, double yaw) {
+    SparseProjectionImage rotatedImage;
+    rotatedImage.reserve(moving.size());
+    for (const auto& movingCell : moving) {
+        const Vec3 rotated = rotateZ(projectionCenter(movingCell), yaw);
+        const Cell key{static_cast<int>(std::floor(rotated.x / cellSize)),
+                       static_cast<int>(std::floor(rotated.y / cellSize)), 0};
+        const int value = movingCell.bottomChain > 8 ? 16 :
+                          std::max(0, movingCell.bottomChain);
+        auto [entry, inserted] = rotatedImage.emplace(key, value);
+        if (!inserted) entry->second = std::max(entry->second, value);
+    }
+    return rotatedImage;
+}
+
 double projectionScore(const ProjectionGrid& reference,
-                       const std::vector<Vec3>& moving, double cellSize,
-                       const ProjectionPose& pose) {
+                       const SparseProjectionImage& moving,
+                       Cell translationCells, std::size_t sourceSize) {
+    if (moving.empty() || sourceSize == 0) return 0;
+    double correlation = 0;
+    for (const auto& [movingKey, movingValue] : moving) {
+        const Cell key{movingKey.x + translationCells.x,
+                       movingKey.y + translationCells.y, 0};
+        const auto found = reference.find(key);
+        if (found == reference.end()) continue;
+        const int referenceValue = found->second.bottomChain > 8 ? 16 :
+            std::max(0, found->second.bottomChain);
+        correlation += static_cast<double>(movingValue * referenceValue);
+    }
+    return correlation / sourceSize;
+}
+
+double projectionScore(const ProjectionGrid& reference,
+                       const std::vector<ProjectionCell>& moving,
+                       double cellSize, const ProjectionPose& pose) {
     if (moving.empty()) return 0;
-    std::size_t matches = 0;
-    double heightScore = 0;
-    for (const auto& point : moving) {
-        const Vec3 rotated = rotateZ(point, pose.yaw);
-        const Vec3 transformed = add(rotated, pose.translation);
+    // Sparse equivalent of Picasso's cv::matchTemplate(..., TM_CCORR): rotate
+    // the complete chain-length image, translate it, then sum pixel products.
+    // Picasso promotes chains above eight to sixteen before correlation.
+    std::unordered_map<Cell, int, CellHash> rotatedImage;
+    rotatedImage.reserve(moving.size());
+    for (const auto& movingCell : moving) {
+        const Vec3 transformed = add(
+            rotateZ(projectionCenter(movingCell), pose.yaw), pose.translation);
         const Cell key{static_cast<int>(std::floor(transformed.x / cellSize)),
                        static_cast<int>(std::floor(transformed.y / cellSize)),
                        0};
+        const int value = movingCell.bottomChain > 8 ? 16 :
+                          std::max(0, movingCell.bottomChain);
+        auto [entry, inserted] = rotatedImage.emplace(key, value);
+        if (!inserted) entry->second = std::max(entry->second, value);
+    }
+    double correlation = 0;
+    for (const auto& [key, movingValue] : rotatedImage) {
         const auto found = reference.find(key);
         if (found == reference.end()) continue;
-        const auto& cell = found->second;
-        const double margin = cellSize * 1.5;
-        if (transformed.z < cell.minZ - margin ||
-            transformed.z > cell.maxZ + margin) continue;
-        ++matches;
-        const double meanZ = cell.sumZ / std::max(1, cell.count);
-        heightScore += std::max(0.0, 1.0 -
-            std::abs(transformed.z - meanZ) / std::max(cellSize * 3.0, 1e-6));
+        const int referenceValue = found->second.bottomChain > 8 ? 16 :
+            std::max(0, found->second.bottomChain);
+        correlation += static_cast<double>(movingValue * referenceValue);
     }
-    const double occupancy = static_cast<double>(matches) / moving.size();
-    const double height = matches == 0 ? 0.0 : heightScore / matches;
-    return occupancy * (.75 + .25 * height);
+    return correlation / moving.size();
 }
 
 std::vector<double> structuralYawCandidates(
@@ -516,88 +695,151 @@ std::vector<std::array<double, 4>> projectionHypotheses(
     const GlobalRegistrationOptions& options) {
     const double span = spanOf(reference, moving);
     if (!std::isfinite(span) || span <= 0) return {};
-    const double coarseCell = std::max(span / 60.0, .02);
-    const double fineCell = std::max(span / 160.0, .008);
-    const auto coarseReferencePoints = downsample(reference, coarseCell);
-    const auto coarseMovingPoints = downsample(moving, coarseCell);
+    // BlackLion caps the template-matching XY resolution at 300 mm and
+    // targets roughly 810k bbox pixels instead of scaling to only 60 cells.
+    const double mm = options.refinement.millimetreScale;
+    const double coarseCell = std::clamp(
+        span / 900.0, 100.0 * mm, 300.0 * mm);
+    const double fineCell = std::max(coarseCell * .5, 50.0 * mm);
+    // Preserve vertical occupancy layers. Isotropic downsampling collapses the
+    // bottom-up chains that Perspective uses to distinguish structures from
+    // a large horizontal ground plane.
+    const auto coarseReferencePoints = controlSample(reference, 40000);
+    const auto coarseMovingPoints = controlSample(moving, 40000);
     if (coarseReferencePoints.size() < 30 || coarseMovingPoints.size() < 30)
         return {};
     const auto referenceGrid = buildProjection(coarseReferencePoints, coarseCell);
     const auto movingGrid = buildProjection(coarseMovingPoints, coarseCell);
-    const auto referenceFeatures = projectionFeatures(referenceGrid, coarseCell, 128);
-    const auto movingFeatures = projectionFeatures(movingGrid, coarseCell, 128);
+    const auto referenceFeatures = projectionVoteFeatures(referenceGrid, 256);
+    const auto movingFeatures = projectionVoteFeatures(movingGrid, 256);
+    const auto movingScoreFeatures = projectionImageCells(
+        movingGrid, 12000);
+#ifdef TZF_REGISTRATION_DEBUG
+    std::fprintf(stderr,
+                 "projection coarse cell=%.3f refCells=%zu movCells=%zu "
+                 "refFeatures=%zu movFeatures=%zu scoreFeatures=%zu\n",
+                 coarseCell, referenceGrid.size(), movingGrid.size(),
+                 referenceFeatures.size(), movingFeatures.size(),
+                 movingScoreFeatures.size());
+#endif
     if (referenceFeatures.size() < 8 || movingFeatures.size() < 8) return {};
 
-    std::vector<double> yawCandidates = structuralYawCandidates(
-        coarseReferencePoints, coarseMovingPoints);
-    for (double yaw = -180.0; yaw < 180.0; yaw += options.yawStepDegrees) {
-        bool duplicate = false;
-        for (double known : yawCandidates)
-            if (std::abs(std::remainder(yaw - known, 360.0)) < 2.0)
-                duplicate = true;
-        if (!duplicate) yawCandidates.push_back(yaw);
-    }
+    // TemplateMatchingAutomatic scans the complete rotation range in 2°
+    // increments; it does not derive yaw from radial point descriptors.
+    std::vector<double> yawCandidates;
+    for (double yaw = -180.0; yaw < 180.0; yaw += 2.0)
+        yawCandidates.push_back(yaw);
     std::vector<ProjectionPose> coarseCandidates;
     for (double yaw : yawCandidates) {
         if (options.refinement.cancellation &&
             options.refinement.cancellation->load()) return {};
         std::unordered_map<Cell, ProjectionVote, CellHash> votes;
+        votes.reserve(referenceFeatures.size() * 8);
+        const auto rotatedScoreImage = rotateProjectionImage(
+            movingScoreFeatures, coarseCell, yaw);
         for (const auto& movingCell : movingFeatures) {
             const Vec3 movingCenter = projectionCenter(movingCell);
             const Vec3 rotated = rotateZ(movingCenter, yaw);
-            const double movingRange = movingCell.maxZ - movingCell.minZ;
             for (const auto& referenceCell : referenceFeatures) {
-                const double referenceRange = referenceCell.maxZ - referenceCell.minZ;
-                if (std::abs(referenceRange - movingRange) > span * .08)
-                    continue;
                 const Vec3 direct = sub(projectionCenter(referenceCell), rotated);
                 const Cell voteKey{
                     static_cast<int>(std::llround(direct.x / coarseCell)),
                     static_cast<int>(std::llround(direct.y / coarseCell)), 0};
                 auto& vote = votes[voteKey];
                 ++vote.count;
-                vote.translation = add(vote.translation, direct);
+                const int movingValue = movingCell.bottomChain > 8 ? 16 :
+                    movingCell.bottomChain;
+                const int referenceValue = referenceCell.bottomChain > 8 ? 16 :
+                    referenceCell.bottomChain;
+                const double weight = static_cast<double>(
+                    movingValue * referenceValue);
+                vote.weight += weight;
+                vote.translation = add(vote.translation, mul(direct, weight));
             }
         }
         std::vector<std::pair<Cell, ProjectionVote>> ranked(votes.begin(),
                                                             votes.end());
-        std::stable_sort(ranked.begin(), ranked.end(),
-                         [](const auto& a, const auto& b) {
-                             return a.second.count > b.second.count;
-                         });
-        for (std::size_t i = 0; i < std::min<std::size_t>(4, ranked.size()); ++i) {
-            const auto& vote = ranked[i].second;
-            if (vote.count < 3) continue;
-            ProjectionPose pose{mul(vote.translation, 1.0 / vote.count), yaw, 0};
-            pose.score = projectionScore(referenceGrid, coarseMovingPoints,
-                                         coarseCell, pose);
-            if (pose.score >= .10) coarseCandidates.push_back(pose);
+        const auto voteOrder = [](const auto& a, const auto& b) {
+            return a.second.weight > b.second.weight;
+        };
+        const auto rankedLimit = std::min<std::size_t>(128, ranked.size());
+        std::partial_sort(ranked.begin(), ranked.begin() + rankedLimit,
+                          ranked.end(), voteOrder);
+        // Picasso keeps ten final peaks per yaw after full-image correlation.
+        // The sparse structural pass is only a candidate generator, so retain
+        // extra peaks here and let the complete image CCORR choose the ten.
+        std::vector<Cell> selectedPeaks;
+        for (std::size_t rankedIndex = 0; rankedIndex < rankedLimit;
+             ++rankedIndex) {
+            const auto& [peak, vote] = ranked[rankedIndex];
+            bool suppressed = false;
+            for (const auto& selected : selectedPeaks) {
+                if (std::abs(peak.x - selected.x) <= 2 &&
+                    std::abs(peak.y - selected.y) <= 2) {
+                    suppressed = true;
+                    break;
+                }
+            }
+            if (suppressed) continue;
+            if (vote.count < 2 || vote.weight <= 0) continue;
+            selectedPeaks.push_back(peak);
+            ProjectionPose pose{{peak.x * coarseCell, peak.y * coarseCell, 0},
+                                yaw, 0};
+            pose.score = projectionScore(
+                referenceGrid, rotatedScoreImage, peak,
+                movingScoreFeatures.size());
+            if (pose.score > 0) coarseCandidates.push_back(pose);
+            if (selectedPeaks.size() >= 10) break;
         }
     }
     std::stable_sort(coarseCandidates.begin(), coarseCandidates.end(),
                      [](const auto& a, const auto& b) {
                          return a.score > b.score;
                      });
-    if (coarseCandidates.size() > 12) coarseCandidates.resize(12);
+#ifdef TZF_REGISTRATION_DEBUG
+    for (std::size_t i = 0; i < std::min<std::size_t>(
+             coarseCandidates.size(), 12); ++i) {
+        const auto& candidate = coarseCandidates[i];
+        std::fprintf(stderr, "coarse[%zu] score=%.6f t=%.3f,%.3f,%.3f "
+                             "yaw=%.3f\n", i, candidate.score,
+                     candidate.translation.x, candidate.translation.y,
+                     candidate.translation.z, candidate.yaw);
+    }
+#endif
+    if (coarseCandidates.size() > 16) coarseCandidates.resize(16);
     if (coarseCandidates.empty()) return {};
 
-    const auto fineReferencePoints = downsample(reference, fineCell);
-    const auto fineMovingPoints = downsample(moving, fineCell);
+    const auto fineReferencePoints = controlSample(reference, 60000);
+    const auto fineMovingPoints = controlSample(moving, 60000);
     const auto fineReference = buildProjection(fineReferencePoints, fineCell);
+    const auto fineMoving = buildProjection(fineMovingPoints, fineCell);
+    const auto fineMovingFeatures = projectionImageCells(
+        fineMoving, 16000);
+    if (fineMovingFeatures.size() < 8) return {};
     std::vector<ProjectionPose> fineCandidates;
     for (const auto& coarse : coarseCandidates) {
-        for (double yaw = coarse.yaw - options.yawStepDegrees;
-             yaw <= coarse.yaw + options.yawStepDegrees; yaw += 1.0) {
+        for (double yaw = coarse.yaw - 2.0;
+             yaw <= coarse.yaw + 2.0; yaw += 1.0) {
             if (options.refinement.cancellation &&
                 options.refinement.cancellation->load()) return {};
+            const auto rotatedFineImage = rotateProjectionImage(
+                fineMovingFeatures, fineCell, yaw);
             for (int dx = -2; dx <= 2; ++dx) {
                 for (int dy = -2; dy <= 2; ++dy) {
                     ProjectionPose pose = coarse;
                     pose.yaw = yaw;
                     pose.translation.x += dx * fineCell;
                     pose.translation.y += dy * fineCell;
-                    pose.score = projectionScore(fineReference, fineMovingPoints,
-                                                 fineCell, pose);
+                    const Cell translationCells{
+                        static_cast<int>(std::llround(
+                            pose.translation.x / fineCell)),
+                        static_cast<int>(std::llround(
+                            pose.translation.y / fineCell)), 0};
+                    pose.translation.x = translationCells.x * fineCell;
+                    pose.translation.y = translationCells.y * fineCell;
+                    pose.score = projectionScore(
+                        fineReference, rotatedFineImage, translationCells,
+                        fineMovingFeatures.size());
                     fineCandidates.push_back(pose);
                 }
             }
@@ -607,10 +849,20 @@ std::vector<std::array<double, 4>> projectionHypotheses(
                      [](const auto& a, const auto& b) {
                          return a.score > b.score;
                      });
+#ifdef TZF_REGISTRATION_DEBUG
+    for (std::size_t i = 0; i < std::min<std::size_t>(
+             fineCandidates.size(), 12); ++i) {
+        const auto& candidate = fineCandidates[i];
+        std::fprintf(stderr, "fine[%zu] score=%.6f t=%.3f,%.3f,%.3f "
+                             "yaw=%.3f\n", i, candidate.score,
+                     candidate.translation.x, candidate.translation.y,
+                     candidate.translation.z, candidate.yaw);
+    }
+#endif
     const Vec3 pivot = center(moving);
     std::vector<std::array<double, 4>> out;
     for (const auto& candidate : fineCandidates) {
-        if (candidate.score < .15) break;
+        if (candidate.score <= 0) break;
         const auto transform = pivotTransform(candidate.translation, pivot,
                                               candidate.yaw);
         bool duplicate = false;
@@ -731,8 +983,15 @@ bool refineIteration(const std::vector<Vec3>& reference,
         addEquation(pair.jacobian, pair.residual, weight);
         const double pointWeight = .05 * weight *
             std::min(1.0, voxel / std::max(pair.distance, 1e-9));
-        addEquation({1, 0, 0, -pair.relative.y}, pair.offset.x, pointWeight);
-        addEquation({0, 1, 0,  pair.relative.x}, pair.offset.y, pointWeight);
+        // Horizontal surfaces constrain Z but must not pull XY toward a
+        // larger coincident patch of ground. Vertical structure supplies the
+        // weak tangential point-to-point constraint.
+        const double verticalSurface =
+            pair.jacobian[0] * pair.jacobian[0] +
+            pair.jacobian[1] * pair.jacobian[1];
+        const double xyWeight = pointWeight * verticalSurface;
+        addEquation({1, 0, 0, -pair.relative.y}, pair.offset.x, xyWeight);
+        addEquation({0, 1, 0,  pair.relative.x}, pair.offset.y, xyWeight);
         addEquation({0, 0, 1, 0}, pair.offset.z, pointWeight);
     }
     if (!solve4(normalMatrix, rhs, delta)) return false;
@@ -802,12 +1061,14 @@ std::array<double, 4> localProjectionSeed(
     const double cellSize = std::clamp(
         span / 500.0, 150.0 * millimetreScale,
         400.0 * millimetreScale);
-    auto referencePoints = downsample(reference, cellSize);
-    auto movingPoints = downsample(moving, cellSize);
-    limitSample(referencePoints, 40000);
-    limitSample(movingPoints, 12000);
+    auto referencePoints = controlSample(reference, 40000);
+    auto movingPoints = controlSample(moving, 40000);
     if (referencePoints.size() < 30 || movingPoints.size() < 30) return initial;
     const auto referenceGrid = buildProjection(referencePoints, cellSize);
+    const auto movingGrid = buildProjection(movingPoints, cellSize);
+    const auto movingStructural = projectionFeatures(movingGrid, cellSize, 4000);
+    const auto movingImage = projectionImageCells(movingGrid, 12000);
+    if (movingStructural.size() < 8) return initial;
     const auto directPose = [&](const std::array<double, 4>& transform) {
         const Vec3 rotatedPivot = rotateZ(pivot, transform[3]);
         return ProjectionPose{{transform[0] + pivot.x - rotatedPivot.x,
@@ -815,7 +1076,7 @@ std::array<double, 4> localProjectionSeed(
                                transform[2]}, transform[3], 0};
     };
     const auto score = [&](const std::array<double, 4>& transform) {
-        return projectionScore(referenceGrid, movingPoints, cellSize,
+        return projectionScore(referenceGrid, movingImage, cellSize,
                                directPose(transform));
     };
     std::array<double, 4> best = initial;
@@ -844,7 +1105,7 @@ std::array<double, 4> localProjectionSeed(
     search(initial, cellSize, 4, 2.0, 2);
     const auto coarseBest = best;
     search(coarseBest, cellSize * .5, 2, .5, 2);
-    const double requiredGain = std::max(.015, initialScore * .04);
+    const double requiredGain = std::max(.025, initialScore * .08);
     return bestScore >= initialScore + requiredGain ? best : initial;
 }
 
@@ -860,21 +1121,58 @@ std::vector<std::array<double, 4>> rankHypotheses(
     const auto coarseMoving = downsample(moving, voxel);
     const Vec3 pivot = center(moving);
     const Index referenceIndex(coarseReference, voxel * 3.0);
-    const auto projection = buildProjection(coarseReference, voxel * 1.5);
+    const double projectionCell = std::clamp(
+        span / 900.0, 100.0 * millimetreScale,
+        300.0 * millimetreScale);
+    const auto projectionReferencePoints = controlSample(reference, 40000);
+    const auto projectionMovingPoints = controlSample(moving, 40000);
+    const auto projection = buildProjection(
+        projectionReferencePoints, projectionCell);
+    const auto movingProjection = buildProjection(
+        projectionMovingPoints, projectionCell);
+    const auto movingStructuralFeatures = projectionFeatures(
+        movingProjection, projectionCell, 4000);
+    const auto movingProjectionImage = projectionImageCells(
+        movingProjection, 16000);
+    const bool hasStructuralProjection = movingStructuralFeatures.size() >= 8;
     std::vector<std::pair<double, std::array<double, 4>>> scored;
     scored.reserve(hypotheses.size());
     for (auto hypothesis : hypotheses) {
         if (cancellation && cancellation->load()) return {};
-        estimateCandidateZ(projection, coarseMoving, pivot, voxel * 1.5,
+        estimateCandidateZ(projection, projectionMovingPoints, pivot,
+                           projectionCell,
                            hypothesis);
-        const double score = quickHypothesisScore(
+        const double proximityScore = quickHypothesisScore(
             referenceIndex, coarseMoving, pivot, hypothesis, voxel * 3.0);
-        if (score > .02) scored.push_back({score, hypothesis});
+        const Vec3 rotatedPivot = rotateZ(pivot, hypothesis[3]);
+        const ProjectionPose pose{
+            {hypothesis[0] + pivot.x - rotatedPivot.x,
+             hypothesis[1] + pivot.y - rotatedPivot.y,
+             hypothesis[2]}, hypothesis[3], 0};
+        const double structuralScore = hasStructuralProjection ?
+            projectionScore(projection, movingProjectionImage,
+                            projectionCell, pose) : 0.0;
+        // Picasso ranks the raw TM_CCORR response. Nearest-point overlap is a
+        // fallback only when a structural chain image cannot be constructed.
+        const double score = hasStructuralProjection ? structuralScore :
+                             proximityScore;
+        if (score > 0) scored.push_back({score, hypothesis});
     }
     std::stable_sort(scored.begin(), scored.end(),
                      [](const auto& a, const auto& b) {
                          return a.first > b.first;
                      });
+#ifdef TZF_REGISTRATION_DEBUG
+    std::fprintf(stderr, "rank structuralFeatures=%zu hypotheses=%zu kept=%zu\n",
+                 movingStructuralFeatures.size(), hypotheses.size(),
+                 scored.size());
+    for (std::size_t i = 0; i < std::min<std::size_t>(scored.size(), 16); ++i) {
+        const auto& [score, hypothesis] = scored[i];
+        std::fprintf(stderr, "rank[%zu] score=%.6f transform=%.3f,%.3f,%.3f,%.3f\n",
+                     i, score, hypothesis[0], hypothesis[1], hypothesis[2],
+                     hypothesis[3]);
+    }
+#endif
     std::vector<std::array<double, 4>> ranked;
     for (const auto& [_, hypothesis] : scored) {
         bool duplicate = false;
@@ -919,8 +1217,18 @@ RegistrationResult registerConstrained(
         return reject("invalid registration unit scale");
     const double mm = options.millimetreScale;
     const Vec3 pivot = center(moving);
-    result.transform = localProjectionSeed(
-        reference, moving, pivot, initial, span, mm, options.cancellation);
+#ifdef TZF_REGISTRATION_DEBUG
+    std::fprintf(stderr, "refine initial=%.3f,%.3f,%.3f,%.3f\n",
+                 initial[0], initial[1], initial[2], initial[3]);
+#endif
+    result.transform = options.useLocalProjectionSeed ?
+        localProjectionSeed(reference, moving, pivot, initial, span, mm,
+                            options.cancellation) : initial;
+#ifdef TZF_REGISTRATION_DEBUG
+    std::fprintf(stderr, "refine seed=%.3f,%.3f,%.3f,%.3f\n",
+                 result.transform[0], result.transform[1], result.transform[2],
+                 result.transform[3]);
+#endif
     const std::array<double, 4> voxels{
         std::clamp(span / 80.0, 250.0 * mm, 1500.0 * mm),
         std::clamp(span / 200.0, 100.0 * mm, 500.0 * mm),
@@ -973,6 +1281,11 @@ RegistrationResult registerConstrained(
                 break;
             }
         }
+#ifdef TZF_REGISTRATION_DEBUG
+        std::fprintf(stderr, "refine voxel=%.3f transform=%.3f,%.3f,%.3f,%.3f\n",
+                     voxel, result.transform[0], result.transform[1],
+                     result.transform[2], result.transform[3]);
+#endif
     }
     const double validationVoxel = voxels.back();
     const double effectiveRmsLimit = options.adaptiveResidualLimits ?
@@ -1010,12 +1323,12 @@ RegistrationResult registerConstrained(
          .75 * quality.residualQuality);
     if (result.overlap < options.minimumOverlap)
         return reject("insufficient validation overlap");
-    if (result.consistency < options.minimumConsistency)
-        return reject("insufficient reciprocal consistency");
     if (result.rms > effectiveRmsLimit)
         return reject("RMS exceeds threshold");
     if (result.p95 > effectiveP95Limit)
         return reject("P95 exceeds threshold");
+    if (result.consistency < options.minimumConsistency)
+        return reject("insufficient reciprocal consistency");
     if (result.confidence < options.minimumConfidence)
         return reject("low registration confidence");
     result.accepted = true;
@@ -1029,10 +1342,14 @@ RegistrationResult registerGlobalConstrained(const std::vector<Point>& reference
     const double distinctTranslation=std::max(spanOf(reference,moving)/100.0,options.refinement.p95Limit*2.0);
     RegistrationResult best,second,bestRejected;double bestScore=std::numeric_limits<double>::infinity(),secondScore=bestScore,rejectedScore=-std::numeric_limits<double>::infinity();
     auto hypotheses = projectionHypotheses(reference, moving, options);
-    auto planeCandidates = planeHypotheses(reference, moving, options);
-    hypotheses.insert(hypotheses.end(), planeCandidates.begin(),
-                      planeCandidates.end());
-    if (hypotheses.size() < 16) {
+    // Perspective treats the chain-image result as the pre-registration. Plane
+    // and descriptor hypotheses are fallbacks only when no structural image
+    // match exists; mixing them into a valid image result reintroduces the
+    // large-ground-plane winner.
+    if (hypotheses.empty()) {
+        auto planeCandidates = planeHypotheses(reference, moving, options);
+        hypotheses.insert(hypotheses.end(), planeCandidates.begin(),
+                          planeCandidates.end());
         auto featureCandidates = featureHypotheses(reference, moving, options);
         hypotheses.insert(hypotheses.end(), featureCandidates.begin(),
                           featureCandidates.end());
@@ -1045,7 +1362,9 @@ RegistrationResult registerGlobalConstrained(const std::vector<Point>& reference
     if (!rankedHypotheses.empty()) hypotheses = std::move(rankedHypotheses);
     for(const auto& initial:hypotheses){
         if(options.refinement.cancellation&&options.refinement.cancellation->load()){rejected.reason="cancelled";return rejected;}
-        auto candidate=registerConstrained(reference,moving,initial,options.refinement);
+        auto refinementOptions = options.refinement;
+        refinementOptions.useLocalProjectionSeed = false;
+        auto candidate=registerConstrained(reference,moving,initial,refinementOptions);
         if(!candidate.accepted){const double diagnostic=candidate.confidence+candidate.overlap*20.0+candidate.consistency*10.0-std::min(10.0,candidate.rms/std::max(options.refinement.rmsLimit,1e-9))-std::min(10.0,candidate.p95/std::max(options.refinement.p95Limit,1e-9));if(bestRejected.reason.empty()||diagnostic>rejectedScore){bestRejected=candidate;rejectedScore=diagnostic;}continue;}
         const double score=candidate.rms+candidate.p95+(1.0-candidate.overlap)*options.refinement.p95Limit;
         if(best.accepted){double dx=candidate.transform[0]-best.transform[0],dy=candidate.transform[1]-best.transform[1],dz=candidate.transform[2]-best.transform[2];double da=std::remainder(candidate.transform[3]-best.transform[3],360.0);if(std::sqrt(dx*dx+dy*dy+dz*dz)<distinctTranslation&&std::abs(da)<1.0){if(score<bestScore){best=candidate;bestScore=score;}continue;}}

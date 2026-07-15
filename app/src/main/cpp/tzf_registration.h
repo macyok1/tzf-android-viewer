@@ -21,6 +21,7 @@ struct RegistrationOptions {
     double minimumConfidence{73.0};
     double millimetreScale{.001};
     bool adaptiveResidualLimits{};
+    bool useLocalProjectionSeed{true};
     double maximumInitialTranslationMeters{std::numeric_limits<double>::infinity()};
     double maximumInitialTranslationRatio{std::numeric_limits<double>::infinity()};
     double maximumInitialYawDelta{std::numeric_limits<double>::infinity()};
