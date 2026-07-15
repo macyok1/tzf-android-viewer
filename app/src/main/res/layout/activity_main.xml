@@ -27,7 +27,7 @@
         <Button android:id="@+id/saveProject" style="@style/CompactTool" android:layout_width="44dp" android:layout_height="44dp" android:text="▣" android:contentDescription="Сохранить проект"/>
         <Button android:id="@+id/exportAsc" style="@style/CompactTool" android:layout_width="44dp" android:layout_height="44dp" android:text="ASC" android:textSize="9sp" android:contentDescription="Экспорт проекта в ASC"/>
         <Button android:id="@+id/compactFit" style="@style/CompactTool" android:layout_width="44dp" android:layout_height="44dp" android:text="⌂" android:contentDescription="Показать всё"/>
-        <Button android:id="@+id/scans" style="@style/CompactTool" android:layout_width="44dp" android:layout_height="44dp" android:text="R/M" android:textSize="10sp" android:contentDescription="Сканы и связки"/>
+        <Button android:id="@+id/scans" style="@style/CompactTool" android:layout_width="44dp" android:layout_height="44dp" android:text="☷" android:textSize="18sp" android:contentDescription="Сканы и наборы сшивки"/>
         <Button android:id="@+id/measure" style="@style/CompactTool" android:layout_width="44dp" android:layout_height="44dp" android:text="◎" android:contentDescription="Измерение"/>
         <Button android:id="@+id/compactProjection" style="@style/CompactTool" android:layout_width="44dp" android:layout_height="44dp" android:text="P" android:textSize="11sp" android:contentDescription="Режим проекции"/>
         <Button android:id="@+id/grid" style="@style/CompactTool" android:layout_width="44dp" android:layout_height="44dp" android:text="▦" android:contentDescription="Сетка"/>
