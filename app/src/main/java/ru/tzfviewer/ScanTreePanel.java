@@ -24,12 +24,17 @@ public final class ScanTreePanel extends LinearLayout {
         void changed();
         void visibilityChanged(ProjectModel.Node node);
         void rolesChanged();
+        default void acceptRegistration(String stationId){}
+        default void rejectRegistration(String stationId){}
+        default void retryRegistration(String stationId){}
+        default void manualRegistration(String stationId){}
     }
 
     private ProjectModel project;
     private Listener listener;
     private final Set<ProjectModel.Node> selected = new LinkedHashSet<>();
     private boolean selectionMode;
+    private boolean registrationView;
 
     public ScanTreePanel(Context context) { this(context, null); }
     public ScanTreePanel(Context context, AttributeSet attrs) {
@@ -46,6 +51,8 @@ public final class ScanTreePanel extends LinearLayout {
     void refresh() {
         removeAllViews();
         if (project == null) return;
+        addViewModeBar();
+        if(registrationView){addRegistrationRows();return;}
         if (selectionMode) addSelectionBar();
         for (ProjectModel.Node node : project.root.children()) addNode(node, 0);
         if (project.root.children().isEmpty()) {
@@ -53,6 +60,15 @@ public final class ScanTreePanel extends LinearLayout {
             empty.setPadding(dp(12), dp(16), 0, dp(16));
             addView(empty);
         }
+    }
+
+    private void addViewModeBar(){
+        LinearLayout bar=row();Button folders=action("Папки",v->{registrationView=false;selectionMode=false;selected.clear();refresh();});Button sets=action("Наборы сшивки",v->{registrationView=true;selectionMode=false;selected.clear();refresh();});folders.setTextColor(registrationView?Color.rgb(159,180,194):Color.rgb(56,201,232));sets.setTextColor(registrationView?Color.rgb(56,201,232):Color.rgb(159,180,194));bar.addView(folders,new LayoutParams(0,dp(42),1));bar.addView(sets,new LayoutParams(0,dp(42),1));addView(bar);
+    }
+
+    private void addRegistrationRows(){
+        List<RegistrationTreeModel.Row> rows=RegistrationTreeModel.rows(project);if(rows.isEmpty()){TextView empty=text("Наборов сшивки пока нет");empty.setPadding(dp(12),dp(16),0,dp(16));addView(empty);return;}
+        for(RegistrationTreeModel.Row item:rows){LinearLayout line=row();if(item.kind==RegistrationTreeModel.Kind.SET){line.setPadding(dp(10),dp(3),dp(6),0);TextView title=text("▼  "+item.title+" · "+item.status);title.setTextColor(Color.rgb(159,180,194));line.addView(title,new LayoutParams(0,dp(38),1));}else{line.setPadding(dp(24),0,dp(2),0);TextView title=text("●  "+item.title+" · "+item.status);title.setTextColor(toneColor(item.tone));line.addView(title,new LayoutParams(0,dp(40),1));if(item.actions.contains(RegistrationTreeModel.Action.ACCEPT))line.addView(action("✓",v->{if(listener!=null)listener.acceptRegistration(item.stationId);}),new LayoutParams(dp(42),dp(38)));if(item.actions.contains(RegistrationTreeModel.Action.REJECT))line.addView(action("×",v->{if(listener!=null)listener.rejectRegistration(item.stationId);}),new LayoutParams(dp(42),dp(38)));if(item.actions.contains(RegistrationTreeModel.Action.RETRY))line.addView(action("Ещё",v->{if(listener!=null)listener.retryRegistration(item.stationId);}),new LayoutParams(dp(54),dp(38)));if(item.actions.contains(RegistrationTreeModel.Action.MANUAL_REGISTER))line.addView(action("Вручную",v->{if(listener!=null)listener.manualRegistration(item.stationId);}),new LayoutParams(dp(82),dp(38)));}addView(line);}
     }
 
     private void addSelectionBar() {
@@ -87,8 +103,6 @@ public final class ScanTreePanel extends LinearLayout {
         row.addView(name, new LayoutParams(0, dp(36), 1));
 
         if (!selectionMode) {
-            row.addView(role("R", node.id.equals(project.referenceNodeId), v -> toggleReference(node)), new LayoutParams(dp(34), dp(32)));
-            row.addView(role("M", node.id.equals(project.movingNodeId), v -> toggleMoving(node)), new LayoutParams(dp(34), dp(32)));
             Button more = action("⋮", v -> showMenu(v, node));
             row.addView(more, new LayoutParams(dp(36), dp(36)));
         }
@@ -104,16 +118,6 @@ public final class ScanTreePanel extends LinearLayout {
         if (scan.loadState == ProjectModel.Scan.ERROR) return " · ошибка";
         if (scan.loadState == ProjectModel.Scan.WAITING) return " · ожидает";
         return "";
-    }
-
-    private void toggleReference(ProjectModel.Node node) {
-        project.setReference(node.id.equals(project.referenceNodeId) ? null : node);
-        changed(); if (listener != null) listener.rolesChanged(); refresh();
-    }
-
-    private void toggleMoving(ProjectModel.Node node) {
-        project.setMoving(node.id.equals(project.movingNodeId) ? null : node);
-        changed(); if (listener != null) listener.rolesChanged(); refresh();
     }
 
     private void showMenu(View anchor, ProjectModel.Node node) {
@@ -168,6 +172,6 @@ public final class ScanTreePanel extends LinearLayout {
     private LinearLayout row(){LinearLayout row=new LinearLayout(getContext());row.setGravity(Gravity.CENTER_VERTICAL);return row;}
     private TextView text(String value){TextView view=new TextView(getContext());view.setText(value);view.setTextColor(Color.WHITE);view.setGravity(Gravity.CENTER_VERTICAL);view.setSingleLine(true);return view;}
     private Button action(String value,OnClickListener listener){Button button=new Button(getContext());button.setText(value);button.setTextColor(Color.WHITE);button.setTextSize(11);button.setPadding(0,0,0,0);button.setBackgroundColor(Color.TRANSPARENT);button.setOnClickListener(listener);return button;}
-    private Button role(String value,boolean active,OnClickListener listener){Button button=action(value,listener);button.setTextColor(active?("R".equals(value)?Color.rgb(69,209,233):Color.rgb(255,180,74)):Color.rgb(120,145,158));return button;}
+    private int toneColor(RegistrationTreeModel.Tone tone){if(tone==RegistrationTreeModel.Tone.GREEN)return Color.rgb(142,224,111);if(tone==RegistrationTreeModel.Tone.ORANGE)return Color.rgb(255,180,74);if(tone==RegistrationTreeModel.Tone.RED)return Color.rgb(255,107,107);return Color.rgb(159,180,194);}
     private int dp(int value){return Math.round(value*getResources().getDisplayMetrics().density);}
 }

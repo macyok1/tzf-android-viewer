@@ -22,6 +22,7 @@
       <LinearLayout android:id="@+id/toolButtons" android:layout_width="match_parent" android:layout_height="wrap_content"
         android:orientation="vertical">
         <Button android:id="@+id/scanX7" style="@style/CompactTool" android:layout_width="44dp" android:layout_height="44dp" android:text="X7" android:textSize="11sp" android:contentDescription="Сканировать Trimble X7"/>
+        <Button android:id="@+id/x7RegisterTarget" style="@style/CompactTool" android:layout_width="44dp" android:layout_height="44dp" android:text="Сшить" android:textSize="8sp" android:contentDescription="Выбрать, с каким сканом сшивать новый X7"/>
         <Button android:id="@+id/compactOpen" style="@style/CompactTool" android:layout_width="44dp" android:layout_height="44dp" android:text="＋" android:contentDescription="Добавить TZF"/>
         <Button android:id="@+id/saveProject" style="@style/CompactTool" android:layout_width="44dp" android:layout_height="44dp" android:text="▣" android:contentDescription="Сохранить проект"/>
         <Button android:id="@+id/exportAsc" style="@style/CompactTool" android:layout_width="44dp" android:layout_height="44dp" android:text="ASC" android:textSize="9sp" android:contentDescription="Экспорт проекта в ASC"/>
@@ -83,7 +84,7 @@
         android:layout_gravity="bottom" android:layout_marginBottom="70dp" android:orientation="vertical" android:background="@color/panel"
         android:visibility="gone" android:elevation="12dp">
         <LinearLayout android:layout_width="match_parent" android:layout_height="36dp" android:gravity="center_vertical" android:paddingHorizontal="10dp">
-            <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="center_vertical" android:text="СКАНЫ И СВЯЗКИ" android:textColor="@color/text_primary" android:textStyle="bold" />
+            <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="center_vertical" android:text="СКАНЫ" android:textColor="@color/text_primary" android:textStyle="bold" />
             <Button android:id="@+id/closeScans" style="@style/CompactTool" android:layout_width="36dp" android:layout_height="36dp" android:text="⌄" />
         </LinearLayout>
         <ScrollView android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1">
