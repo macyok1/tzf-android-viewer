@@ -25,15 +25,17 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 final class AppUpdater implements AutoCloseable {
-    static final String MANIFEST_URL="https://github.com/macyok1/tzf-android-viewer/releases/download/nightly/update.json";
+    static final String NIGHTLY_MANIFEST_URL="https://github.com/macyok1/tzf-android-viewer/releases/download/nightly/update.json";
+    static final String STABLE_MANIFEST_URL="https://github.com/macyok1/tzf-android-viewer/releases/latest/download/update.json";
     interface Listener {void status(String text);void available(UpdateInfo info);void progress(int percent);void ready(File apk,UpdateInfo info);void error(String message);}
     private final Context context;
     private final Listener listener;
+    private final String manifestUrl;
     private final Handler main=new Handler(Looper.getMainLooper());
     private final ExecutorService worker=Executors.newSingleThreadExecutor();
 
-    AppUpdater(Context context,Listener listener){this.context=context.getApplicationContext();this.listener=listener;}
-    void check(){worker.execute(()->{try{UpdateInfo info=UpdateInfo.parse(readText(MANIFEST_URL));if(info.minSdk>Build.VERSION.SDK_INT)throw new IOException("обновление требует Android API "+info.minSdk);if(info.isNewerThan(BuildConfig.VERSION_CODE))post(()->listener.available(info));else post(()->listener.status("Установлена актуальная версия "+BuildConfig.VERSION_NAME));}catch(Exception error){fail(error);}});}
+    AppUpdater(Context context,Listener listener,boolean nightly){this.context=context.getApplicationContext();this.listener=listener;this.manifestUrl=nightly?NIGHTLY_MANIFEST_URL:STABLE_MANIFEST_URL;}
+    void check(){worker.execute(()->{try{UpdateInfo info=UpdateInfo.parse(readText(manifestUrl));if(info.minSdk>Build.VERSION.SDK_INT)throw new IOException("обновление требует Android API "+info.minSdk);if(info.isNewerThan(BuildConfig.VERSION_CODE))post(()->listener.available(info));else post(()->listener.status("Установлена актуальная версия "+BuildConfig.VERSION_NAME));}catch(Exception error){fail(error);}});}
     void download(UpdateInfo info){worker.execute(()->{File directory=new File(context.getCacheDir(),"updates");if(!directory.exists()&&!directory.mkdirs()){fail(new IOException("не удалось создать каталог обновления"));return;}File temp=new File(directory,"update.tmp"),target=new File(directory,"tzf-viewer-update.apk");temp.delete();target.delete();try{downloadFile(info.apkUrl,temp);String actual=UpdateSecurity.sha256(temp);if(!actual.equals(info.sha256))throw new IOException("SHA-256 загруженного APK не совпадает");try{Files.move(temp.toPath(),target.toPath(),StandardCopyOption.REPLACE_EXISTING,StandardCopyOption.ATOMIC_MOVE);}catch(IOException unsupported){Files.move(temp.toPath(),target.toPath(),StandardCopyOption.REPLACE_EXISTING);}post(()->listener.ready(target,info));}catch(Exception error){temp.delete();fail(error);}});}
     static boolean install(Activity activity,File apk){if(Build.VERSION.SDK_INT>=26&&!activity.getPackageManager().canRequestPackageInstalls()){Intent settings=new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,Uri.parse("package:"+activity.getPackageName()));activity.startActivity(settings);return false;}Uri uri=FileProvider.getUriForFile(activity,activity.getPackageName()+".updates",apk);Intent intent=new Intent(Intent.ACTION_VIEW).setDataAndType(uri,"application/vnd.android.package-archive").addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_ACTIVITY_NEW_TASK);activity.startActivity(intent);return true;}
     private String readText(String url)throws IOException{HttpURLConnection connection=connection(url);try(InputStream input=connection.getInputStream()){ByteArrayOutputStream out=new ByteArrayOutputStream();byte[] buffer=new byte[8192];int count,total=0;while((count=input.read(buffer))!=-1){total+=count;if(total>65536)throw new IOException("update.json слишком большой");out.write(buffer,0,count);}return new String(out.toByteArray(),StandardCharsets.UTF_8);}finally{connection.disconnect();}}

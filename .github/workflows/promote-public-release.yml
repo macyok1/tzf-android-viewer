@@ -1,0 +1,35 @@
+name: Promote nightly to public release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Public version tag (for example v0.2.42)
+        required: true
+        type: string
+      notes:
+        description: Release notes
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download current nightly assets
+        env: { GH_TOKEN: ${{ github.token }} }
+        run: gh release download nightly --pattern 'tzf-viewer-latest.apk' --pattern 'update.json'
+      - name: Verify nightly manifest and APK
+        run: |
+          test -s tzf-viewer-latest.apk
+          test -s update.json
+          EXPECTED=$(jq -r .sha256 update.json)
+          ACTUAL=$(sha256sum tzf-viewer-latest.apk | cut -d ' ' -f1)
+          test "$EXPECTED" = "$ACTUAL"
+      - name: Create public release from nightly
+        env: { GH_TOKEN: ${{ github.token }}, TAG: ${{ inputs.tag }}, NOTES: ${{ inputs.notes }} }
+        run: |
+          gh release create "$TAG" tzf-viewer-latest.apk update.json --title "$TAG" --notes "$NOTES"

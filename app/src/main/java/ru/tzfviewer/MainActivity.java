@@ -109,12 +109,14 @@ public final class MainActivity extends Activity {
     }
 
     private void bindViews(){
+        bindToolHints();
         ((TextView)findViewById(R.id.projectTitle)).setText(project.name);
         status=findViewById(R.id.status);referenceLabel=findViewById(R.id.referenceLabel);movingLabel=findViewById(R.id.movingLabel);transformSummary=findViewById(R.id.transformSummary);
         cancelButton=findViewById(R.id.cancelRegistration);applyCandidateButton=findViewById(R.id.applyCandidate);rejectCandidateButton=findViewById(R.id.rejectCandidate);registrationProgress=findViewById(R.id.registrationProgress);stitchMenuButton=findViewById(R.id.moreTools);manipulatorStitchButton=findViewById(R.id.manipulatorStitch);exitManipulatorButton=findViewById(R.id.exitManipulator);
         scanPanel=findViewById(R.id.scanPanel);settingsPanel=findViewById(R.id.settingsPanel);pairCard=findViewById(R.id.pairCard);quickFlyout=findViewById(R.id.quickFlyout);tree=findViewById(R.id.scanTree);pointSizeButton=findViewById(R.id.pointSize);budgetButton=findViewById(R.id.pointBudget);scanX7Button=findViewById(R.id.scanX7);x7TargetButton=findViewById(R.id.x7RegisterTarget);x7Progress=findViewById(R.id.x7Progress);cancelX7Button=findViewById(R.id.cancelX7);orbitModeButton=findViewById(R.id.orbitMode);
     }
 
+    private void bindToolHints(){int[] ids={R.id.scanX7,R.id.compactOpen,R.id.saveProject,R.id.compactFit,R.id.scans,R.id.measure,R.id.compactProjection,R.id.grid,R.id.pointSize,R.id.pointBudget,R.id.section,R.id.exportAsc,R.id.moreTools};for(int id:ids){View tool=findViewById(id);if(tool!=null&&tool.getContentDescription()!=null)tool.setTooltipText(tool.getContentDescription());}}
     private void bindCamera(){
         OrientationCubeView cube=findViewById(R.id.orientation);cube.setListener(new OrientationCubeView.Listener(){public void onPreset(float yaw,float pitch){cloud.setPreset(yaw,pitch);}public void onRotate(float dy,float dp){cloud.rotateCamera(dy,dp);}});
         cloud.setOrientationListener((yaw,pitch)->{cube.setOrientation(yaw,pitch);if(!manipulatorMode){project.cameraYaw=yaw;project.cameraPitch=pitch;project.touch(System.currentTimeMillis());}});
