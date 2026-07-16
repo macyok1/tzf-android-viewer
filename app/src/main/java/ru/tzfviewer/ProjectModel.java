@@ -6,7 +6,7 @@ import java.util.List;
 import java.util.UUID;
 
 final class ProjectModel {
-    static final int FORMAT_VERSION = 5;
+    static final int FORMAT_VERSION = 6;
     final String id;
     String name;
     long createdAt;
@@ -14,7 +14,7 @@ final class ProjectModel {
     int pointBudget = -1;
     int pointSize = 2;
     float cameraYaw = 25f, cameraPitch = -18f, cameraZoom = 1f;
-    boolean orthographic, gridVisible = true;
+    boolean orthographic = true, gridVisible = true;
     boolean clipEnabled, clipLocked;
     final float[] clipBounds = new float[6];
     String referenceNodeId = "", movingNodeId = "";
@@ -61,6 +61,7 @@ final class ProjectModel {
     static final class Scan extends Node {
         static final int WAITING=0,LOADING=1,READY=2,ERROR=3;
         String uri = "";
+        SourceType sourceType=SourceType.TZF;
         int color = 0xff38c9e8;
         long sourcePointCount;
         boolean embeddedPoseValid;
@@ -79,6 +80,8 @@ final class ProjectModel {
         @Override boolean isGroup(){return false;}
         @Override int scanCount(){return 1;}
     }
+
+    enum SourceType { TZF, ASC }
 
     enum RegistrationState { UNLINKED, PENDING, REGISTERING, REGISTERED, CHECK, FAILED, LEGACY_UNLINKED }
     enum LinkSource { AUTO_X7, MANUAL }

@@ -57,14 +57,14 @@ public class ProjectModelTest {
         assertTrue(restored.embeddedPoseValid);assertTrue(restored.embeddedPoseApplied);assertArrayEquals(scan.embeddedPose,restored.embeddedPose,T);
     }
 
-    @Test public void codecV5RoundTripsRegistrationRecords(){
+    @Test public void codecV6RoundTripsRegistrationRecordsAndSourceType(){
         ProjectModel p=new ProjectModel("p","v5",100);RegistrationGraph graph=new RegistrationGraph(p);
         ProjectModel.Scan reference=new ProjectModel.Scan("r","reference"),moving=new ProjectModel.Scan("m","moving");
         graph.addScan(p.root,reference,110);graph.addScan(p.root,moving,120);
-        moving.registrationState=ProjectModel.RegistrationState.CHECK;moving.attemptedReferenceId="r";moving.registrationMessage="check registration";
+        moving.sourceType=ProjectModel.SourceType.ASC;moving.registrationState=ProjectModel.RegistrationState.CHECK;moving.attemptedReferenceId="r";moving.registrationMessage="check registration";
         moving.registrationMetrics=new ProjectModel.RegistrationMetrics(1.2f,3.4f,.56f,.78f,91);moving.pendingCandidateValid=true;System.arraycopy(new float[]{4,5,6,7},0,moving.pendingCandidateWorld,0,4);
         ProjectModel restored=ProjectCodec.decode(ProjectCodec.encode(p));ProjectModel.Scan rm=(ProjectModel.Scan)restored.findNode("m");
-        assertEquals(5,ProjectModel.FORMAT_VERSION);assertEquals(2,restored.registrationSets.size());assertEquals(120,rm.acquiredAt);assertEquals(ProjectModel.RegistrationState.CHECK,rm.registrationState);assertEquals("r",rm.attemptedReferenceId);assertEquals("check registration",rm.registrationMessage);assertEquals(1.2f,rm.registrationMetrics.rms,T);assertTrue(rm.pendingCandidateValid);assertArrayEquals(moving.pendingCandidateWorld,rm.pendingCandidateWorld,T);
+        assertEquals(6,ProjectModel.FORMAT_VERSION);assertEquals(ProjectModel.SourceType.ASC,rm.sourceType);assertEquals(2,restored.registrationSets.size());assertEquals(120,rm.acquiredAt);assertEquals(ProjectModel.RegistrationState.CHECK,rm.registrationState);assertEquals("r",rm.attemptedReferenceId);assertEquals("check registration",rm.registrationMessage);assertEquals(1.2f,rm.registrationMetrics.rms,T);assertTrue(rm.pendingCandidateValid);assertArrayEquals(moving.pendingCandidateWorld,rm.pendingCandidateWorld,T);
     }
 
     @Test public void legacyV4MigratesToStableSeparateSetsWithoutMovingScans(){
@@ -119,4 +119,5 @@ public class ProjectModelTest {
     @Test public void storeSavesLoadsCopiesAndDeletesAtomically()throws Exception{
         java.io.File dir=Files.createTempDirectory("tzf-project-test").toFile();ProjectStore store=new ProjectStore(dir);ProjectModel p=new ProjectModel("abc-1","Original",1);p.root.add(new ProjectModel.Scan("s","Scan"));store.save(p);assertEquals(1,store.list().size());assertEquals(1,store.load(p.id).scanCount());ProjectModel copy=store.copy(p,"Copy",2);assertEquals(2,store.list().size());assertEquals("Copy",copy.name);assertEquals(1,copy.registrationSets.size());new RegistrationGraph(copy).validate();store.delete(p.id);assertEquals(1,store.list().size());
     }
+    @Test public void newProjectsDefaultToOrthographicProjection(){assertTrue(ProjectModel.create("new",1).orthographic);}
 }

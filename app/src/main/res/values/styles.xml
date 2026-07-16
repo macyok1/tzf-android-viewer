@@ -15,7 +15,7 @@
     <style name="CompactTool" parent="android:style/Widget.Material.Button.Borderless">
         <item name="android:textColor">@color/text_primary</item><item name="android:textSize">17sp</item>
         <item name="android:minWidth">42dp</item><item name="android:minHeight">42dp</item>
-        <item name="android:padding">0dp</item><item name="android:background">@color/panel</item>
+        <item name="android:padding">0dp</item><item name="android:background">@drawable/bg_compact_tool</item>
     </style>
     <style name="PrimaryAction" parent="android:style/Widget.Material.Button.Borderless">
         <item name="android:textColor">@color/ink</item>
