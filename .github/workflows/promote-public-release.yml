@@ -35,8 +35,6 @@ jobs:
           TAG: ${{ inputs.tag }}
           NOTES: ${{ inputs.notes }}
         run: |
-          jq --arg tag "$TAG" '.apkUrl="https://github.com/macyok1/tzf-viewer-releases/releases/download/"+$tag+"/tzf-viewer-latest.apk"' update.json > stable-update.json
-          gh release create "$TAG" tzf-viewer-latest.apk stable-update.json --repo "$RELEASES_REPO" --title "$TAG" --notes "$NOTES"
-          gh release download "$TAG" --repo "$RELEASES_REPO" --pattern stable-update.json --output update.json
-          gh release delete-asset "$TAG" stable-update.json --repo "$RELEASES_REPO" --yes
-          gh release upload "$TAG" update.json --repo "$RELEASES_REPO"
+          jq --arg tag "$TAG" '.apkUrl="https://github.com/macyok1/tzf-viewer-releases/releases/download/"+$tag+"/tzf-viewer-latest.apk"' update.json > public-update.json
+          mv public-update.json update.json
+          gh release create "$TAG" tzf-viewer-latest.apk update.json --repo "$RELEASES_REPO" --title "$TAG" --notes "$NOTES"
