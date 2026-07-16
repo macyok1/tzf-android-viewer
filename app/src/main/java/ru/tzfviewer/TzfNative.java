@@ -23,6 +23,10 @@ final class TzfNative {
     static native RegistrationResult registerPointClouds(float[] referenceXyz, float[] movingXyz,
             float[] initialTransform, double rmsLimit, double p95Limit)
             throws java.io.IOException;
+    /** Refines a user-positioned candidate; visual confirmation remains required in manual mode. */
+    static native RegistrationResult registerPointCloudsCandidate(float[] referenceXyz,
+            float[] movingXyz, float[] initialTransform, double rmsLimit, double p95Limit)
+            throws java.io.IOException;
     static native RegistrationResult registerPointCloudsGlobal(float[] referenceXyz, float[] movingXyz,
             double rmsLimit, double p95Limit) throws java.io.IOException;
     /** Coarse global search. Its result must be verified against dense source data. */

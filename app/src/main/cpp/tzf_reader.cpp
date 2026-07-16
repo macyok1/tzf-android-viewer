@@ -276,6 +276,54 @@ Java_ru_tzfviewer_TzfNative_registerPointClouds(JNIEnv* env, jclass,
 }
 
 extern "C" JNIEXPORT jobject JNICALL
+Java_ru_tzfviewer_TzfNative_registerPointCloudsCandidate(
+    JNIEnv* env, jclass, jfloatArray referenceXyz, jfloatArray movingXyz,
+    jfloatArray initialTransform, jdouble rmsLimit, jdouble p95Limit) {
+    if (referenceXyz == nullptr || movingXyz == nullptr ||
+        initialTransform == nullptr || env->GetArrayLength(initialTransform) != 4 ||
+        env->GetArrayLength(referenceXyz) % 3 != 0 ||
+        env->GetArrayLength(movingXyz) % 3 != 0) {
+        throwIOException(env, "invalid candidate registration point arrays");
+        return nullptr;
+    }
+    try {
+        std::vector<float> reference(
+            static_cast<std::size_t>(env->GetArrayLength(referenceXyz)));
+        std::vector<float> moving(
+            static_cast<std::size_t>(env->GetArrayLength(movingXyz)));
+        env->GetFloatArrayRegion(referenceXyz, 0,
+                                 static_cast<jsize>(reference.size()), reference.data());
+        env->GetFloatArrayRegion(movingXyz, 0,
+                                 static_cast<jsize>(moving.size()), moving.data());
+        std::array<float, 4> initialFloats{};
+        env->GetFloatArrayRegion(initialTransform, 0, 4, initialFloats.data());
+        if (env->ExceptionCheck()) return nullptr;
+        std::array<double, 4> initial{};
+        std::copy(initialFloats.begin(), initialFloats.end(), initial.begin());
+        registrationCancelled.store(false);
+        tzf::RegistrationOptions options;
+        // The manual tool already gives the user visual control of the pose.
+        // Its decimated cloud is therefore used for refinement only, not as a
+        // millimetre-precision rejection gate.
+        options.rmsLimit = std::max(rmsLimit, 60.0);
+        options.p95Limit = std::max(p95Limit, 150.0);
+        options.millimetreScale = 1.0;
+        options.adaptiveResidualLimits = true;
+        options.maximumInitialTranslationMeters = 2000.0;
+        options.maximumInitialTranslationRatio = .10;
+        options.maximumInitialYawDelta = 10.0;
+        options.cancellation = &registrationCancelled;
+        const auto result = tzf::registerConstrained(
+            tzf::xyzToPoints(reference), tzf::xyzToPoints(moving), initial,
+            options);
+        return makeRegistrationResult(env, result);
+    } catch (const std::exception& error) {
+        throwIOException(env, error.what());
+        return nullptr;
+    }
+}
+
+extern "C" JNIEXPORT jobject JNICALL
 Java_ru_tzfviewer_TzfNative_registerPointCloudsGlobal(JNIEnv* env, jclass,
                                                        jfloatArray referenceXyz,
                                                        jfloatArray movingXyz,
