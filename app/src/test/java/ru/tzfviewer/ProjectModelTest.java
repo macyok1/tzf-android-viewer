@@ -120,4 +120,5 @@ public class ProjectModelTest {
         java.io.File dir=Files.createTempDirectory("tzf-project-test").toFile();ProjectStore store=new ProjectStore(dir);ProjectModel p=new ProjectModel("abc-1","Original",1);p.root.add(new ProjectModel.Scan("s","Scan"));store.save(p);assertEquals(1,store.list().size());assertEquals(1,store.load(p.id).scanCount());ProjectModel copy=store.copy(p,"Copy",2);assertEquals(2,store.list().size());assertEquals("Copy",copy.name);assertEquals(1,copy.registrationSets.size());new RegistrationGraph(copy).validate();store.delete(p.id);assertEquals(1,store.list().size());
     }
     @Test public void newProjectsDefaultToOrthographicProjection(){assertTrue(ProjectModel.create("new",1).orthographic);}
+    @Test public void legacyProjectsMigrateToOrthographicDefault(){ProjectModel old=new ProjectModel("legacy-projection","old",1);old.orthographic=false;String v5=ProjectCodec.encode(old).replace("TZF_PROJECT\t6","TZF_PROJECT\t5");assertTrue(ProjectCodec.decode(v5).orthographic);}
 }
