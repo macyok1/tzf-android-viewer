@@ -12,17 +12,15 @@ on:
         required: true
         type: string
 
-permissions:
-  contents: write
-
 jobs:
   promote:
     runs-on: ubuntu-latest
     steps:
       - name: Download current nightly assets
         env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh release download nightly --pattern 'tzf-viewer-latest.apk' --pattern 'update.json'
+          GH_TOKEN: ${{ secrets.TZF_RELEASES_REPO_TOKEN }}
+          RELEASES_REPO: macyok1/tzf-viewer-releases
+        run: gh release download nightly --repo "$RELEASES_REPO" --pattern 'tzf-viewer-latest.apk' --pattern 'update.json'
       - name: Verify nightly manifest and APK
         run: |
           test -s tzf-viewer-latest.apk
@@ -32,12 +30,13 @@ jobs:
           test "$EXPECTED" = "$ACTUAL"
       - name: Create public release from nightly
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.TZF_RELEASES_REPO_TOKEN }}
+          RELEASES_REPO: macyok1/tzf-viewer-releases
           TAG: ${{ inputs.tag }}
           NOTES: ${{ inputs.notes }}
         run: |
-          jq --arg tag "$TAG" '.apkUrl="https://github.com/macyok1/tzf-android-viewer/releases/download/"+$tag+"/tzf-viewer-latest.apk"' update.json > stable-update.json
-          gh release create "$TAG" tzf-viewer-latest.apk stable-update.json --title "$TAG" --notes "$NOTES"
-          gh release download "$TAG" --pattern stable-update.json --output update.json
-          gh release delete-asset "$TAG" stable-update.json --yes
-          gh release upload "$TAG" update.json
+          jq --arg tag "$TAG" '.apkUrl="https://github.com/macyok1/tzf-viewer-releases/releases/download/"+$tag+"/tzf-viewer-latest.apk"' update.json > stable-update.json
+          gh release create "$TAG" tzf-viewer-latest.apk stable-update.json --repo "$RELEASES_REPO" --title "$TAG" --notes "$NOTES"
+          gh release download "$TAG" --repo "$RELEASES_REPO" --pattern stable-update.json --output update.json
+          gh release delete-asset "$TAG" stable-update.json --repo "$RELEASES_REPO" --yes
+          gh release upload "$TAG" update.json --repo "$RELEASES_REPO"

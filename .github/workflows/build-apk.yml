@@ -49,7 +49,7 @@ jobs:
         run: |
           cp app/build/outputs/apk/release/app-release.apk tzf-viewer-latest.apk
           SHA256=$(sha256sum tzf-viewer-latest.apk | cut -d ' ' -f 1)
-          printf '{"versionCode":%s,"versionName":"%s","apkUrl":"https://github.com/macyok1/tzf-android-viewer/releases/download/nightly/tzf-viewer-latest.apk","sha256":"%s","minSdk":26}\n' "$VERSION_CODE" "$VERSION_NAME" "$SHA256" > update.json
+          printf '{"versionCode":%s,"versionName":"%s","apkUrl":"https://github.com/macyok1/tzf-viewer-releases/releases/download/nightly/tzf-viewer-latest.apk","sha256":"%s","minSdk":26}\n' "$VERSION_CODE" "$VERSION_NAME" "$SHA256" > update.json
       - name: Upload APK artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -60,9 +60,8 @@ jobs:
             update.json
       - name: Publish nightly updater assets
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.TZF_RELEASES_REPO_TOKEN }}
+          RELEASES_REPO: macyok1/tzf-viewer-releases
         run: |
-          git tag -f nightly "$GITHUB_SHA"
-          git push -f origin nightly
-          gh release view nightly >/dev/null 2>&1 || gh release create nightly --prerelease --title "TZF Viewer nightly" --notes "Автоматическая сборка из main"
-          gh release upload nightly tzf-viewer-latest.apk update.json --clobber
+          gh release view nightly --repo "$RELEASES_REPO" >/dev/null 2>&1 || gh release create nightly --repo "$RELEASES_REPO" --prerelease --title "TZF Viewer nightly" --notes "Automatic build from private source repository"
+          gh release upload nightly tzf-viewer-latest.apk update.json --repo "$RELEASES_REPO" --clobber

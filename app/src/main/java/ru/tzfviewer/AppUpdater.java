@@ -25,8 +25,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 final class AppUpdater implements AutoCloseable {
-    static final String NIGHTLY_MANIFEST_URL="https://github.com/macyok1/tzf-android-viewer/releases/download/nightly/update.json";
-    static final String STABLE_MANIFEST_URL="https://github.com/macyok1/tzf-android-viewer/releases/latest/download/update.json";
+    static final String NIGHTLY_MANIFEST_URL="https://github.com/macyok1/tzf-viewer-releases/releases/download/nightly/update.json";
+    static final String STABLE_MANIFEST_URL="https://github.com/macyok1/tzf-viewer-releases/releases/latest/download/update.json";
     interface Listener {void status(String text);void available(UpdateInfo info);void progress(int percent);void ready(File apk,UpdateInfo info);void error(String message);}
     private final Context context;
     private final Listener listener;
