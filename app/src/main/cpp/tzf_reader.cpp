@@ -5,6 +5,8 @@
 #include <jni.h>
 
 #include <algorithm>
+#include <array>
+#include <cmath>
 #include <exception>
 #include <stdexcept>
 #include <string>
@@ -84,6 +86,42 @@ std::vector<tzf::Point> decodeRegistrationPoints(const std::string& path,
     if (!validation.empty()) throw std::runtime_error(validation);
     return tzf::xyzToPoints(tzf::decodePointCloudPreview(
         file, header, scan, directory, limit, 1).xyz);
+}
+
+std::array<double, 4> pivotFromDirect(
+    const std::vector<tzf::Point>& points,
+    const std::array<double, 4>& direct) {
+    double x = 0, y = 0;
+    for (const auto& point : points) {
+        x += point.x;
+        y += point.y;
+    }
+    const double count = std::max<std::size_t>(1, points.size());
+    x /= count;
+    y /= count;
+    const double radians = direct[3] * 3.14159265358979323846 / 180.0;
+    const double rotatedX = std::cos(radians) * x - std::sin(radians) * y;
+    const double rotatedY = std::sin(radians) * x + std::cos(radians) * y;
+    return {direct[0] - x + rotatedX, direct[1] - y + rotatedY,
+            direct[2], direct[3]};
+}
+
+std::array<double, 4> directFromPivot(
+    const std::vector<tzf::Point>& points,
+    const std::array<double, 4>& transform) {
+    double x = 0, y = 0;
+    for (const auto& point : points) {
+        x += point.x;
+        y += point.y;
+    }
+    const double count = std::max<std::size_t>(1, points.size());
+    x /= count;
+    y /= count;
+    const double radians = transform[3] * 3.14159265358979323846 / 180.0;
+    const double rotatedX = std::cos(radians) * x - std::sin(radians) * y;
+    const double rotatedY = std::sin(radians) * x + std::cos(radians) * y;
+    return {transform[0] + x - rotatedX, transform[1] + y - rotatedY,
+            transform[2], transform[3]};
 }
 
 jobject makeRegistrationResult(JNIEnv* env,
@@ -258,6 +296,107 @@ Java_ru_tzfviewer_TzfNative_registerPointCloudsGlobal(JNIEnv* env, jclass,
         const auto result=tzf::registerGlobalConstrained(tzf::xyzToPoints(reference),tzf::xyzToPoints(moving),options);
         return makeRegistrationResult(env,result);
     }catch(const std::exception& error){throwIOException(env,error.what());return nullptr;}
+}
+
+extern "C" JNIEXPORT jobject JNICALL
+Java_ru_tzfviewer_TzfNative_registerPointCloudsGlobalCandidate(
+    JNIEnv* env, jclass, jfloatArray referenceXyz, jfloatArray movingXyz,
+    jdouble rmsLimit, jdouble p95Limit) {
+    if (referenceXyz == nullptr || movingXyz == nullptr ||
+        env->GetArrayLength(referenceXyz) % 3 != 0 ||
+        env->GetArrayLength(movingXyz) % 3 != 0) {
+        throwIOException(env, "invalid global registration point arrays");
+        return nullptr;
+    }
+    try {
+        std::vector<float> reference(
+            static_cast<std::size_t>(env->GetArrayLength(referenceXyz)));
+        std::vector<float> moving(
+            static_cast<std::size_t>(env->GetArrayLength(movingXyz)));
+        env->GetFloatArrayRegion(referenceXyz, 0,
+                                 static_cast<jsize>(reference.size()),
+                                 reference.data());
+        env->GetFloatArrayRegion(movingXyz, 0,
+                                 static_cast<jsize>(moving.size()),
+                                 moving.data());
+        if (env->ExceptionCheck()) return nullptr;
+        registrationCancelled.store(false);
+        tzf::GlobalRegistrationOptions options;
+        // This pass only establishes a candidate.  The strict residual check
+        // runs below on a dense, fine-voxel cloud from the original TZFs.
+        options.refinement.rmsLimit = std::max(rmsLimit, 60.0);
+        options.refinement.p95Limit = std::max(p95Limit, 150.0);
+        options.refinement.millimetreScale = 1.0;
+        options.refinement.adaptiveResidualLimits = true;
+        options.refinement.cancellation = &registrationCancelled;
+        const auto result = tzf::registerGlobalConstrained(
+            tzf::xyzToPoints(reference), tzf::xyzToPoints(moving), options);
+        return makeRegistrationResult(env, result);
+    } catch (const std::exception& error) {
+        throwIOException(env, error.what());
+        return nullptr;
+    }
+}
+
+extern "C" JNIEXPORT jobject JNICALL
+Java_ru_tzfviewer_TzfNative_refineTzfScansDirect(
+    JNIEnv* env, jclass, jstring referencePath, jstring movingPath,
+    jfloatArray initialDirectTransform, jdouble rmsLimit, jdouble p95Limit) {
+    if (referencePath == nullptr || movingPath == nullptr ||
+        initialDirectTransform == nullptr ||
+        env->GetArrayLength(initialDirectTransform) != 4) {
+        throwIOException(env, "invalid dense registration arguments");
+        return nullptr;
+    }
+    const char* referenceChars = env->GetStringUTFChars(referencePath, nullptr);
+    if (referenceChars == nullptr) return nullptr;
+    const char* movingChars = env->GetStringUTFChars(movingPath, nullptr);
+    if (movingChars == nullptr) {
+        env->ReleaseStringUTFChars(referencePath, referenceChars);
+        return nullptr;
+    }
+    try {
+        const std::string referencePathString(referenceChars);
+        const std::string movingPathString(movingChars);
+        env->ReleaseStringUTFChars(referencePath, referenceChars);
+        env->ReleaseStringUTFChars(movingPath, movingChars);
+        referenceChars = movingChars = nullptr;
+        std::array<float, 4> initialFloats{};
+        env->GetFloatArrayRegion(initialDirectTransform, 0, 4,
+                                 initialFloats.data());
+        if (env->ExceptionCheck()) return nullptr;
+        std::array<double, 4> direct{};
+        std::copy(initialFloats.begin(), initialFloats.end(), direct.begin());
+        registrationCancelled.store(false);
+        auto reference = decodeRegistrationPoints(referencePathString, 2'000'000);
+        auto moving = decodeRegistrationPoints(movingPathString, 2'000'000);
+        tzf::RegistrationOptions options;
+        // The final 5 mm voxel is finer than the scanner's own sampling at
+        // distance, so retain the physical 8/15 mm acceptance floor rather
+        // than applying the 3/8 mm UI limits to quantized source points.
+        options.rmsLimit = std::max(rmsLimit, 8.0);
+        options.p95Limit = std::max(p95Limit, 15.0);
+        options.millimetreScale = 1.0;
+        options.adaptiveResidualLimits = false;
+        options.maxInputPoints = 1'000'000;
+        options.iterationsPerLevel = 10;
+        options.finalVoxelSize = 5.0;
+        options.maximumInitialTranslationMeters = 500.0;
+        options.maximumInitialTranslationRatio = .05;
+        options.maximumInitialYawDelta = 3.0;
+        options.cancellation = &registrationCancelled;
+        auto result = tzf::registerConstrained(
+            reference, moving, pivotFromDirect(moving, direct), options);
+        result.transform = directFromPivot(moving, result.transform);
+        return makeRegistrationResult(env, result);
+    } catch (const std::exception& error) {
+        if (referenceChars != nullptr)
+            env->ReleaseStringUTFChars(referencePath, referenceChars);
+        if (movingChars != nullptr)
+            env->ReleaseStringUTFChars(movingPath, movingChars);
+        throwIOException(env, error.what());
+        return nullptr;
+    }
 }
 
 extern "C" JNIEXPORT void JNICALL

@@ -14,6 +14,9 @@ namespace tzf {
 struct RegistrationOptions {
     std::size_t maxInputPoints{40000};
     int iterationsPerLevel{12};
+    // Zero preserves the normal coarse-registration schedule.  A positive
+    // value enables a final verification pass at this spatial resolution.
+    double finalVoxelSize{};
     double rmsLimit{0.003};
     double p95Limit{0.008};
     double minimumOverlap{0.12};

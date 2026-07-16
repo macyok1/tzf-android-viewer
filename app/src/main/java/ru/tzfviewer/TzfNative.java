@@ -25,6 +25,13 @@ final class TzfNative {
             throws java.io.IOException;
     static native RegistrationResult registerPointCloudsGlobal(float[] referenceXyz, float[] movingXyz,
             double rmsLimit, double p95Limit) throws java.io.IOException;
+    /** Coarse global search. Its result must be verified against dense source data. */
+    static native RegistrationResult registerPointCloudsGlobalCandidate(float[] referenceXyz,
+            float[] movingXyz, double rmsLimit, double p95Limit) throws java.io.IOException;
+    /** Refines a coarse candidate against the TZF source data and returns a direct local transform. */
+    static native RegistrationResult refineTzfScansDirect(String referencePath, String movingPath,
+            float[] initialDirectTransform, double rmsLimit, double p95Limit)
+            throws java.io.IOException;
     /** Edges are flattened as reference, moving, dx, dy, dz, yaw, weight. */
     static native float[] optimizePoseGraph(float[] initialPoses, float[] edges, int fixedStation)
             throws java.io.IOException;

@@ -3,8 +3,10 @@ package ru.tzfviewer;
 final class NativeRegistrationEngine implements RegistrationEngine {
     interface InputProvider { Input load(Request request)throws Exception; }
     static final class Input {
-        final float[] referenceWorld,movingLocal,initialMovingWorld,embeddedMovingWorld;
-        Input(float[] referenceWorld,float[] movingLocal,float[] initialMovingWorld,float[] embeddedMovingWorld){this.referenceWorld=referenceWorld;this.movingLocal=movingLocal;this.initialMovingWorld=initialMovingWorld;this.embeddedMovingWorld=embeddedMovingWorld;}
+        final float[] referenceWorld,movingLocal,initialMovingWorld,embeddedMovingWorld,referenceStationWorld;
+        final String referenceTzfPath,movingTzfPath;
+        Input(float[] referenceWorld,float[] movingLocal,float[] initialMovingWorld,float[] embeddedMovingWorld){this(referenceWorld,movingLocal,initialMovingWorld,embeddedMovingWorld,new float[]{0,0,0,0},null,null);}
+        Input(float[] referenceWorld,float[] movingLocal,float[] initialMovingWorld,float[] embeddedMovingWorld,float[] referenceStationWorld,String referenceTzfPath,String movingTzfPath){this.referenceWorld=referenceWorld;this.movingLocal=movingLocal;this.initialMovingWorld=initialMovingWorld;this.embeddedMovingWorld=embeddedMovingWorld;this.referenceStationWorld=referenceStationWorld;this.referenceTzfPath=referenceTzfPath;this.movingTzfPath=movingTzfPath;}
     }
 
     private final InputProvider provider;
@@ -13,12 +15,11 @@ final class NativeRegistrationEngine implements RegistrationEngine {
 
     @Override public Result register(Request request)throws Exception {
         Input input=provider.load(request);if(input==null||!RegistrationPoseMath.finite(input.initialMovingWorld))throw new IllegalArgumentException("invalid registration input");
-        float[] pivot=RegistrationTransform.centroid(input.movingLocal);RegistrationResult nativeResult;
-        if(RegistrationPoseMath.finite(input.embeddedMovingWorld))nativeResult=TzfNative.registerPointClouds(input.referenceWorld,input.movingLocal,RegistrationTransform.toPivot(input.embeddedMovingWorld,pivot),rmsLimit,p95Limit);
-        else nativeResult=TzfNative.registerPointCloudsGlobal(input.referenceWorld,input.movingLocal,rmsLimit,p95Limit);
+        float[] pivot=RegistrationTransform.centroid(input.movingLocal);RegistrationResult nativeResult;float[] directWorld;
+        if(RegistrationPoseMath.finite(input.embeddedMovingWorld)){nativeResult=TzfNative.registerPointClouds(input.referenceWorld,input.movingLocal,RegistrationTransform.toPivot(input.embeddedMovingWorld,pivot),rmsLimit,p95Limit);directWorld=RegistrationTransform.fromPivot(nativeResult.transform,pivot);}
+        else {nativeResult=TzfNative.registerPointCloudsGlobalCandidate(input.referenceWorld,input.movingLocal,rmsLimit,p95Limit);directWorld=RegistrationTransform.fromPivot(nativeResult.transform,pivot);if(nativeResult.accepted&&input.referenceTzfPath!=null&&input.movingTzfPath!=null){float[] localInitial=ProjectModel.relative(input.referenceStationWorld,directWorld);nativeResult=TzfNative.refineTzfScansDirect(input.referenceTzfPath,input.movingTzfPath,localInitial,rmsLimit,p95Limit);directWorld=ProjectModel.compose(input.referenceStationWorld,nativeResult.transform);}}
         ProjectModel.RegistrationMetrics metrics=new ProjectModel.RegistrationMetrics((float)nativeResult.rms,(float)nativeResult.p95,(float)nativeResult.overlap,(float)nativeResult.consistency,(float)nativeResult.confidence);
         if(!nativeResult.accepted)return Result.rejected(metrics,nativeResult.reason);
-        float[] directWorld=RegistrationTransform.fromPivot(nativeResult.transform,pivot);
         return "check registration".equals(nativeResult.reason)?Result.check(directWorld,metrics,nativeResult.reason):Result.accepted(directWorld,metrics,nativeResult.reason);
     }
 

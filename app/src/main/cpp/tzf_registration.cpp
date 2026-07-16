@@ -1187,9 +1187,9 @@ std::vector<std::array<double, 4>> rankHypotheses(
             }
         }
         if (!duplicate) ranked.push_back(hypothesis);
-        // A room often has repeated walls and door openings.  Keep enough
-        // distinct high-scoring placements for geometric refinement to
-        // disambiguate them instead of rejecting a valid fourth-or-later peak.
+        // Repeated structures can create several plausible placements. Keep
+        // enough distinct peaks for geometric refinement to disambiguate them
+        // instead of rejecting a valid fourth-or-later hypothesis.
         if (ranked.size() >= 12) break;
     }
     return ranked;
@@ -1232,11 +1232,15 @@ RegistrationResult registerConstrained(
                  result.transform[0], result.transform[1], result.transform[2],
                  result.transform[3]);
 #endif
+    const double finalVoxel = options.finalVoxelSize > 0 ?
+        options.finalVoxelSize : std::clamp(
+            span / 600.0, 40.0 * mm, 200.0 * mm);
     const std::array<double, 4> voxels{
         std::clamp(span / 80.0, 250.0 * mm, 1500.0 * mm),
         std::clamp(span / 200.0, 100.0 * mm, 500.0 * mm),
-        std::clamp(span / 400.0, 50.0 * mm, 250.0 * mm),
-        std::clamp(span / 600.0, 40.0 * mm, 200.0 * mm)};
+        std::clamp(span / 400.0,
+                   std::max(50.0 * mm, finalVoxel * 2.0), 250.0 * mm),
+        finalVoxel};
     for (double voxel : voxels) {
         if (options.cancellation && options.cancellation->load())
             return reject("cancelled");
