@@ -32,4 +32,8 @@ jobs:
       - name: Create public release from nightly
         env: { GH_TOKEN: ${{ github.token }}, TAG: ${{ inputs.tag }}, NOTES: ${{ inputs.notes }} }
         run: |
-          gh release create "$TAG" tzf-viewer-latest.apk update.json --title "$TAG" --notes "$NOTES"
+          jq --arg tag "$TAG" '.apkUrl="https://github.com/macyok1/tzf-android-viewer/releases/download/"+$tag+"/tzf-viewer-latest.apk"' update.json > stable-update.json
+          gh release create "$TAG" tzf-viewer-latest.apk stable-update.json --title "$TAG" --notes "$NOTES"
+          gh release download "$TAG" --pattern stable-update.json --output update.json
+          gh release delete-asset "$TAG" stable-update.json --yes
+          gh release upload "$TAG" update.json
