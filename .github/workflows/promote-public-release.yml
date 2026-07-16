@@ -20,7 +20,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Download current nightly assets
-        env: { GH_TOKEN: ${{ github.token }} }
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: gh release download nightly --pattern 'tzf-viewer-latest.apk' --pattern 'update.json'
       - name: Verify nightly manifest and APK
         run: |
@@ -30,7 +31,10 @@ jobs:
           ACTUAL=$(sha256sum tzf-viewer-latest.apk | cut -d ' ' -f1)
           test "$EXPECTED" = "$ACTUAL"
       - name: Create public release from nightly
-        env: { GH_TOKEN: ${{ github.token }}, TAG: ${{ inputs.tag }}, NOTES: ${{ inputs.notes }} }
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+          NOTES: ${{ inputs.notes }}
         run: |
           jq --arg tag "$TAG" '.apkUrl="https://github.com/macyok1/tzf-android-viewer/releases/download/"+$tag+"/tzf-viewer-latest.apk"' update.json > stable-update.json
           gh release create "$TAG" tzf-viewer-latest.apk stable-update.json --title "$TAG" --notes "$NOTES"
