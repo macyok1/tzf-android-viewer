@@ -256,7 +256,7 @@ public final class MainActivity extends Activity {
     private String displayName(Uri uri){try(android.database.Cursor c=getContentResolver().query(uri,new String[]{OpenableColumns.DISPLAY_NAME},null,null,null)){if(c!=null&&c.moveToFirst())return c.getString(0);}catch(Exception ignored){}String name=uri.getLastPathSegment();return name==null?"Scan.tzf":name.substring(Math.max(name.lastIndexOf('/')+1,name.lastIndexOf(':')+1));}
 
     private void decodeScene(Uri uri,ProjectModel.Scan scan){decodeScene(uri,scan,null);}
-    private void decodeScene(Uri uri,ProjectModel.Scan scan){decodeScene(uri,scan,null);}
+
     private void decodeScene(Uri uri,ProjectModel.Scan scan,Runnable readyCallback){
         AtomicInteger counter=sceneGenerations.computeIfAbsent(scan.id,k->new AtomicInteger());int generation=counter.incrementAndGet();scan.loadState=ProjectModel.Scan.LOADING;scan.loadError="";tree.refresh();
         worker.execute(()->{try{
@@ -405,6 +405,7 @@ public final class MainActivity extends Activity {
         for(int index=0;index<scans.size();index++){ProjectModel.Scan scan=scans.get(index);File local=localForAsc(scan);float[] pose=scan.worldTransform();try(PointCloudSource session=openPointSource(scan,local)){long available=session.sourcePointCount();session.prepare((int)Math.min(Integer.MAX_VALUE,available));while(true){float[] chunk=session.nextChunk(100_000);if(chunk.length==0)break;applyPose(chunk,pose);for(int i=0;i<chunk.length;i+=3){float x=chunk[i],y=chunk[i+1],z=chunk[i+2];if(!AscExportMath.insideCut(x,y,z,cut))continue;eligible++;if(sampleNeeded){int slot;if(sampled<capacity)slot=sampled++;else{long candidate=(long)(reservoir.nextDouble()*eligible);if(candidate>=capacity)continue;slot=(int)candidate;}sample[slot*3]=x;sample[slot*3+1]=y;sample[slot*3+2]=z;}}}long count=eligible;int scanNumber=index+1;runOnUiThread(()->status.setText("ASC: оценка "+scanNumber+"/"+scans.size()+" · "+count+" точек"));}catch(Exception error){throw new IOException("проверка "+scan.name+": "+error.getMessage(),error);}}
         return new AscAnalysis(eligible,sampled*3==sample.length?sample:java.util.Arrays.copyOf(sample,sampled*3));
     }
+    private File localForAsc(ProjectModel.Scan scan)throws IOException{if(scan.sourceType==ProjectModel.SourceType.ASC)return null;File local=localFiles.get(scan.id);return local!=null?local:copyToCache(Uri.parse(scan.uri),"export-"+scan.id+".tzf");}
     private static final class AscAnalysis{final long eligible;final float[] sample;AscAnalysis(long eligible,float[] sample){this.eligible=eligible;this.sample=sample;}}
     private int scanQuota(ProjectModel.Scan scan){if(project.pointBudget==-2)return (int)Math.min(Integer.MAX_VALUE,Math.max(20_000L,scan.sourcePointCount));return Math.max(20_000,effectiveBudget()/Math.max(1,project.scanCount()));}
     private void sampleAutoBudget(float fps){if(project==null||project.pointBudget!=-1||renderUpdatesFrozen)return;int before=autoPointBudget.current(),after=autoPointBudget.sample(fps,false);if(after!=before){status.setText("AUTO: "+budgetLabel(after)+" · "+Math.round(fps)+" FPS");reloadAll();}}
