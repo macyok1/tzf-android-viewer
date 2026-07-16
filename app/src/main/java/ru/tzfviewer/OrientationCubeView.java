@@ -28,6 +28,7 @@ public final class OrientationCubeView extends View {
     };
     private static final String[] LABELS = {"ПРАВО", "ЛЕВО", "ВЕРХ", "НИЗ", "ПЕРЕД", "ЗАД"};
 
+    private static final String[] ENGLISH_LABELS = {"RIGHT", "LEFT", "TOP", "BOT", "FRONT", "BACK"};
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final List<Face> visibleFaces = new ArrayList<>(3);
     private final int touchSlop;
@@ -99,7 +100,7 @@ public final class OrientationCubeView extends View {
         if (area > getWidth() * getHeight() * .025f) {
             paint.setStyle(Paint.Style.FILL); paint.setColor(Color.WHITE); paint.setTextAlign(Paint.Align.CENTER);
             paint.setTextSize(Math.max(10f, Math.min(getWidth(), getHeight()) * .082f));
-            canvas.drawText(LABELS[face.index], average(face.x), average(face.y) - (paint.ascent()+paint.descent())*.5f, paint);
+            canvas.drawText(ENGLISH_LABELS[face.index], average(face.x), average(face.y) - (paint.ascent()+paint.descent())*.5f, paint);
         }
     }
 
