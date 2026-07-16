@@ -58,6 +58,18 @@ Java_ru_tzfviewer_TzfNative_nextPreviewChunk(JNIEnv* env,jclass,jlong handle,jin
 
 extern "C" JNIEXPORT void JNICALL
 Java_ru_tzfviewer_TzfNative_closePreviewSession(JNIEnv*,jclass,jlong handle){std::lock_guard<std::mutex> lock(previewMutex);previewSessions.erase(handle);}
+extern "C" JNIEXPORT void JNICALL
+Java_ru_tzfviewer_TzfNative_writeStitchedTzf(JNIEnv* env,jclass,jstring inputPath,jstring outputPath,jfloatArray worldPose){
+    if(inputPath==nullptr||outputPath==nullptr||worldPose==nullptr||env->GetArrayLength(worldPose)!=4){throwIOException(env,"invalid TZF export arguments");return;}
+    const char* input=env->GetStringUTFChars(inputPath,nullptr);if(input==nullptr)return;
+    const char* output=env->GetStringUTFChars(outputPath,nullptr);if(output==nullptr){env->ReleaseStringUTFChars(inputPath,input);return;}
+    try{
+        std::array<float,4> raw{};env->GetFloatArrayRegion(worldPose,0,4,raw.data());if(env->ExceptionCheck()){env->ReleaseStringUTFChars(outputPath,output);env->ReleaseStringUTFChars(inputPath,input);return;}
+        std::array<double,4> pose{};for(std::size_t i=0;i<pose.size();++i)pose[i]=raw[i];
+        tzf::writeRegistrationPose(input,output,pose);
+        env->ReleaseStringUTFChars(outputPath,output);env->ReleaseStringUTFChars(inputPath,input);
+    }catch(const std::exception& error){env->ReleaseStringUTFChars(outputPath,output);env->ReleaseStringUTFChars(inputPath,input);throwIOException(env,error.what());}
+}
 
 namespace {
 

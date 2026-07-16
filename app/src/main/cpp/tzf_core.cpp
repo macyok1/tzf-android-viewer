@@ -7,6 +7,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <utility>
+#include <system_error>
 
 namespace tzf {
 namespace {
@@ -235,7 +236,10 @@ RegistrationInformation parseRegistrationInformation(
 std::vector<std::uint8_t> BinaryFile::read(std::uint64_t offset,
                                            std::uint64_t length) {
     if (!rangeFits(offset, length, size_)) {
-        throw std::runtime_error("TZF read is outside file bounds");
+        std::ostringstream message;
+        message << "TZF read outside bounds: offset=" << offset
+                << ", length=" << length << ", file=" << size_;
+        throw std::runtime_error(message.str());
     }
     if (length > static_cast<std::uint64_t>(
                      std::numeric_limits<std::size_t>::max())) {
@@ -798,4 +802,73 @@ std::string validateBlockDirectory(const BlockDirectory& directory,
     return {};
 }
 
+void writeRegistrationPose(const std::filesystem::path& input,
+                           const std::filesystem::path& output,
+                           const std::array<double, 4>& pose) {
+    constexpr std::uint64_t registrationOffset = 0x44;
+    constexpr std::uint64_t registrationSize = 12 * sizeof(double);
+    for (double value : pose)
+        if (!std::isfinite(value)) throw std::runtime_error("TZF pose is not finite");
+
+    BinaryFile source(input);
+    const auto header = parseFileHeader(source);
+    const auto scan = parseScanInfo(source, header.scanInfoOffset);
+    (void)scan;
+    const auto directory = parseBlockDirectory(source, header.blockDirectoryOffset);
+    const auto validation = validateBlockDirectory(directory, source.size());
+    if (!validation.empty()) throw std::runtime_error(validation);
+    if (!rangeFits(header.scanInfoOffset + registrationOffset,
+                   registrationSize, source.size())) {
+        throw std::runtime_error("TZF registration block is outside file bounds");
+    }
+
+    std::error_code copyError;
+    std::filesystem::copy_file(input, output,
+                               std::filesystem::copy_options::overwrite_existing,
+                               copyError);
+    if (copyError) throw std::runtime_error("cannot stage TZF output: " + copyError.message());
+
+    const double radians = pose[3] * 3.14159265358979323846 / 180.0;
+    const double c = std::cos(radians), s = std::sin(radians);
+    const std::array<double, 12> registration{
+        c, s, 0.0,
+       -s, c, 0.0,
+        0.0, 0.0, 1.0,
+        pose[0], pose[1], pose[2]};
+    std::array<std::uint8_t, registrationSize> encoded{};
+    for (std::size_t value = 0; value < registration.size(); ++value) {
+        std::uint64_t bits{};
+        std::memcpy(&bits, &registration[value], sizeof(bits));
+        for (unsigned byte = 0; byte < sizeof(bits); ++byte)
+            encoded[value * sizeof(bits) + byte] =
+                static_cast<std::uint8_t>(bits >> (byte * 8U));
+    }
+
+    std::fstream staged(output, std::ios::in | std::ios::out | std::ios::binary);
+    if (!staged) throw std::runtime_error("cannot open staged TZF output");
+    staged.seekp(static_cast<std::streamoff>(header.scanInfoOffset + registrationOffset),
+                 std::ios::beg);
+    staged.write(reinterpret_cast<const char*>(encoded.data()),
+                 static_cast<std::streamsize>(encoded.size()));
+    staged.flush();
+    if (!staged) throw std::runtime_error("cannot write staged TZF registration");
+    staged.close();
+
+    BinaryFile verifiedFile(output);
+    const auto verifiedHeader = parseFileHeader(verifiedFile);
+    const auto verifiedDirectory = parseBlockDirectory(
+        verifiedFile, verifiedHeader.blockDirectoryOffset);
+    const auto verifiedValidation = validateBlockDirectory(
+        verifiedDirectory, verifiedFile.size());
+    if (!verifiedValidation.empty()) throw std::runtime_error(verifiedValidation);
+    const auto verified = parseRegistrationInformation(
+        verifiedFile, verifiedHeader.scanInfoOffset);
+    if (!verified.valid ||
+        std::abs(verified.translation[0] - pose[0]) > 1e-6 ||
+        std::abs(verified.translation[1] - pose[1]) > 1e-6 ||
+        std::abs(verified.translation[2] - pose[2]) > 1e-6 ||
+        std::abs(std::remainder(verified.yawDegrees - pose[3], 360.0)) > 1e-6) {
+        throw std::runtime_error("TZF registration verification failed");
+    }
+}
 } // namespace tzf

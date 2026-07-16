@@ -15,6 +15,7 @@ final class TzfNative {
     static native void preparePreviewSession(long handle,int maxPoints) throws java.io.IOException;
     static native float[] nextPreviewChunk(long handle,int maxPoints) throws java.io.IOException;
     static native void closePreviewSession(long handle);
+    static native void writeStitchedTzf(String inputPath,String outputPath,float[] worldPose) throws java.io.IOException;
 
     static native RegistrationResult registerScans(String referencePath, String movingPath,
             float[] initialTransform, double rmsLimit, double p95Limit)

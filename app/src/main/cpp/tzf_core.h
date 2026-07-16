@@ -167,4 +167,8 @@ private:
 [[nodiscard]] std::string validateBlockDirectory(
     const BlockDirectory& directory, std::uint64_t fileSize);
 
+void writeRegistrationPose(const std::filesystem::path& input,
+                           const std::filesystem::path& output,
+                           const std::array<double, 4>& pose);
+
 } // namespace tzf

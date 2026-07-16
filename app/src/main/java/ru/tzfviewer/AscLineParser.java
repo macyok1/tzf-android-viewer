@@ -2,16 +2,29 @@ package ru.tzfviewer;
 
 final class AscLineParser {
     private AscLineParser(){}
+
     static float[] xyz(String line){
-        if(line==null)return null;
-        String clean=line.trim();if(clean.startsWith("\uFEFF"))clean=clean.substring(1).trim();
-        if(clean.isEmpty()||clean.startsWith("#")||clean.startsWith("//")||clean.startsWith(";"))return null;
-        String[] values=clean.split("[\\s,;]+",-1);
-        if(values.length<3)return null;
-        try{
-            float x=Float.parseFloat(values[0]),y=Float.parseFloat(values[1]),z=Float.parseFloat(values[2]);
-            if(!Float.isFinite(x)||!Float.isFinite(y)||!Float.isFinite(z))return null;
-            return new float[]{x,y,z};
-        }catch(NumberFormatException ignored){return null;}
+        float[] output=new float[3];
+        return xyz(line,output)?output:null;
     }
+
+    static boolean xyz(String line,float[] output){
+        if(line==null||output==null||output.length<3)return false;
+        String clean=line.trim();
+        if(clean.startsWith("\uFEFF"))clean=clean.substring(1).trim();
+        if(clean.isEmpty()||clean.startsWith("#")||clean.startsWith("//")||clean.startsWith(";"))return false;
+        int cursor=0;
+        for(int component=0;component<3;component++){
+            while(cursor<clean.length()&&separator(clean.charAt(cursor)))cursor++;
+            int start=cursor;
+            while(cursor<clean.length()&&!separator(clean.charAt(cursor)))cursor++;
+            if(start==cursor)return false;
+            try{output[component]=Float.parseFloat(clean.substring(start,cursor));}
+            catch(NumberFormatException ignored){return false;}
+            if(!Float.isFinite(output[component]))return false;
+        }
+        return true;
+    }
+
+    private static boolean separator(char value){return Character.isWhitespace(value)||value==','||value==';';}
 }
