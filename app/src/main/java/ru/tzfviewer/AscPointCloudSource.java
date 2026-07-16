@@ -5,6 +5,7 @@ import java.io.*;
 final class AscPointCloudSource implements PointCloudSource {
     private final AscPointCache cache;private RandomAccessFile input;private long target,outputIndex,inputIndex;
     AscPointCloudSource(File cacheFile,long sourceBytes)throws IOException{cache=AscPointCache.open(cacheFile,sourceBytes);}
+    AscPointCloudSource(File source,File cacheFile)throws IOException{cache=AscPointCache.ensure(new FileInputStream(source),source.length(),cacheFile,null);}
     AscPointCloudSource(InputStream source,long sourceBytes,File cacheFile,AscPointCache.Observer observer)throws IOException{cache=AscPointCache.ensure(source,sourceBytes,cacheFile,observer);}
     long skippedLineCount(){return cache.skipped;}
     @Override public long sourcePointCount(){return cache.count;}
