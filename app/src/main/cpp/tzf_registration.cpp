@@ -1187,7 +1187,10 @@ std::vector<std::array<double, 4>> rankHypotheses(
             }
         }
         if (!duplicate) ranked.push_back(hypothesis);
-        if (ranked.size() >= 3) break;
+        // A room often has repeated walls and door openings.  Keep enough
+        // distinct high-scoring placements for geometric refinement to
+        // disambiguate them instead of rejecting a valid fourth-or-later peak.
+        if (ranked.size() >= 12) break;
     }
     return ranked;
 }
@@ -1339,57 +1342,46 @@ RegistrationResult registerConstrained(
 RegistrationResult registerGlobalConstrained(const std::vector<Point>& reference,const std::vector<Point>& moving,const GlobalRegistrationOptions& options){
     RegistrationResult rejected;if(reference.size()<100||moving.size()<100){rejected.reason="not enough points";return rejected;}
     if(!std::isfinite(options.yawStepDegrees)||options.yawStepDegrees<5.0||options.yawStepDegrees>90.0){rejected.reason="invalid yaw step";return rejected;}
-    const double distinctTranslation=std::max(spanOf(reference,moving)/100.0,options.refinement.p95Limit*2.0);
-    RegistrationResult best,second,bestRejected;double bestScore=std::numeric_limits<double>::infinity(),secondScore=bestScore,rejectedScore=-std::numeric_limits<double>::infinity();
-    auto hypotheses = projectionHypotheses(reference, moving, options);
-    // Perspective treats the chain-image result as the pre-registration. Plane
-    // and descriptor hypotheses are fallbacks only when no structural image
-    // match exists; mixing them into a valid image result reintroduces the
-    // large-ground-plane winner.
-    if (hypotheses.empty()) {
-        auto planeCandidates = planeHypotheses(reference, moving, options);
-        hypotheses.insert(hypotheses.end(), planeCandidates.begin(),
-                          planeCandidates.end());
-        auto featureCandidates = featureHypotheses(reference, moving, options);
-        hypotheses.insert(hypotheses.end(), featureCandidates.begin(),
-                          featureCandidates.end());
-    }
-    if(hypotheses.empty()){const Vec3 referenceCenter=center(reference),movingCenter=center(moving),translation=sub(referenceCenter,movingCenter);for(double yaw=-180.0;yaw<180.0;yaw+=options.yawStepDegrees)hypotheses.push_back(pivotTransform(translation,movingCenter,yaw));}
-    auto rankedHypotheses = rankHypotheses(
-        reference, moving, hypotheses, spanOf(reference, moving),
-        options.refinement.millimetreScale,
-        options.refinement.cancellation);
-    if (!rankedHypotheses.empty()) hypotheses = std::move(rankedHypotheses);
-    for(const auto& initial:hypotheses){
-        if(options.refinement.cancellation&&options.refinement.cancellation->load()){rejected.reason="cancelled";return rejected;}
-        auto refinementOptions = options.refinement;
-        refinementOptions.useLocalProjectionSeed = false;
-        auto candidate=registerConstrained(reference,moving,initial,refinementOptions);
-        if(!candidate.accepted){const double diagnostic=candidate.confidence+candidate.overlap*20.0+candidate.consistency*10.0-std::min(10.0,candidate.rms/std::max(options.refinement.rmsLimit,1e-9))-std::min(10.0,candidate.p95/std::max(options.refinement.p95Limit,1e-9));if(bestRejected.reason.empty()||diagnostic>rejectedScore){bestRejected=candidate;rejectedScore=diagnostic;}continue;}
-        const double score=candidate.rms+candidate.p95+(1.0-candidate.overlap)*options.refinement.p95Limit;
-        if(best.accepted){double dx=candidate.transform[0]-best.transform[0],dy=candidate.transform[1]-best.transform[1],dz=candidate.transform[2]-best.transform[2];double da=std::remainder(candidate.transform[3]-best.transform[3],360.0);if(std::sqrt(dx*dx+dy*dy+dz*dz)<distinctTranslation&&std::abs(da)<1.0){if(score<bestScore){best=candidate;bestScore=score;}continue;}}
-        if(score<bestScore){second=best;secondScore=bestScore;best=candidate;bestScore=score;}else if(score<secondScore){second=candidate;secondScore=score;}
-    }
-    if(!best.accepted){if(!bestRejected.reason.empty())return bestRejected;rejected.reason="no global hypothesis";return rejected;}
-    if (second.accepted) {
-        const double separation = (secondScore - bestScore) /
-            std::max(bestScore, 1e-12);
-        best.confidence = std::min(
-            best.confidence,
-            73.0 + 27.0 * std::clamp(
-                separation / std::max(options.ambiguityRatio, 1e-6),
-                0.0, 1.0));
-        if (secondScore <= bestScore * (1.0 + options.ambiguityRatio)) {
-            best.accepted = false;
-            best.reason = "ambiguous global hypotheses";
-            return best;
+    const double span=spanOf(reference,moving);
+    const double distinctTranslation=std::max(span/100.0,options.refinement.p95Limit*2.0);
+    const auto evaluateHypotheses=[&](std::vector<std::array<double,4>> hypotheses){
+        RegistrationResult noMatch,best,second,bestRejected;
+        double bestScore=std::numeric_limits<double>::infinity(),secondScore=bestScore,rejectedScore=-std::numeric_limits<double>::infinity();
+        if(hypotheses.empty())return noMatch;
+        auto rankedHypotheses=rankHypotheses(reference,moving,hypotheses,span,options.refinement.millimetreScale,options.refinement.cancellation);
+        const auto& candidates=rankedHypotheses.empty()?hypotheses:rankedHypotheses;
+        for(const auto& initial:candidates){
+            if(options.refinement.cancellation&&options.refinement.cancellation->load()){noMatch.reason="cancelled";return noMatch;}
+            auto refinementOptions=options.refinement;
+            refinementOptions.useLocalProjectionSeed=false;
+            auto candidate=registerConstrained(reference,moving,initial,refinementOptions);
+            if(!candidate.accepted){const double diagnostic=candidate.confidence+candidate.overlap*20.0+candidate.consistency*10.0-std::min(10.0,candidate.rms/std::max(options.refinement.rmsLimit,1e-9))-std::min(10.0,candidate.p95/std::max(options.refinement.p95Limit,1e-9));if(bestRejected.reason.empty()||diagnostic>rejectedScore){bestRejected=candidate;rejectedScore=diagnostic;}continue;}
+            const double score=candidate.rms+candidate.p95+(1.0-candidate.overlap)*options.refinement.p95Limit;
+            if(best.accepted){double dx=candidate.transform[0]-best.transform[0],dy=candidate.transform[1]-best.transform[1],dz=candidate.transform[2]-best.transform[2];double da=std::remainder(candidate.transform[3]-best.transform[3],360.0);if(std::sqrt(dx*dx+dy*dy+dz*dz)<distinctTranslation&&std::abs(da)<1.0){if(score<bestScore){best=candidate;bestScore=score;}continue;}}
+            if(score<bestScore){second=best;secondScore=bestScore;best=candidate;bestScore=score;}else if(score<secondScore){second=candidate;secondScore=score;}
         }
-    }
-    if (best.confidence < options.minimumConfidence) {
-        best.reason = "check registration";
-        return best;
-    }
-    best.reason="accepted global";return best;
+        if(!best.accepted)return bestRejected;
+        if(second.accepted){const double separation=(secondScore-bestScore)/std::max(bestScore,1e-12);best.confidence=std::min(best.confidence,73.0+27.0*std::clamp(separation/std::max(options.ambiguityRatio,1e-6),0.0,1.0));if(secondScore<=bestScore*(1.0+options.ambiguityRatio)){best.accepted=false;best.reason="ambiguous global hypotheses";return best;}}
+        if(best.confidence<options.minimumConfidence){best.reason="check registration";return best;}
+        best.reason="accepted global";return best;
+    };
+
+    // Evaluate image matches first.  They are the most reliable when they
+    // converge, while a room's large floor or wall must not displace them.
+    auto projectionResult=evaluateHypotheses(projectionHypotheses(reference,moving,options));
+    if(projectionResult.accepted)return projectionResult;
+
+    // A structural image can still yield only false peaks in a symmetric room.
+    // In that case, try plane/feature hypotheses in a separate pass so they
+    // recover the valid placement without competing with a valid image result.
+    std::vector<std::array<double,4>> fallbackHypotheses=planeHypotheses(reference,moving,options);
+    auto featureCandidates=featureHypotheses(reference,moving,options);
+    fallbackHypotheses.insert(fallbackHypotheses.end(),featureCandidates.begin(),featureCandidates.end());
+    if(fallbackHypotheses.empty()){const Vec3 referenceCenter=center(reference),movingCenter=center(moving),translation=sub(referenceCenter,movingCenter);for(double yaw=-180.0;yaw<180.0;yaw+=options.yawStepDegrees)fallbackHypotheses.push_back(pivotTransform(translation,movingCenter,yaw));}
+    auto fallbackResult=evaluateHypotheses(std::move(fallbackHypotheses));
+    if(fallbackResult.accepted||!fallbackResult.reason.empty())return fallbackResult;
+    if(!projectionResult.reason.empty())return projectionResult;
+    rejected.reason="no global hypothesis";return rejected;
 }
 
 } // namespace tzf
