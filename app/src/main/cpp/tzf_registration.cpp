@@ -1,5 +1,6 @@
 #include "tzf_registration.h"
 #include "tzf_geometry.h"
+#include "tzf_vertical_seed.h"
 
 #include <algorithm>
 #include <array>
@@ -1227,6 +1228,9 @@ RegistrationResult registerConstrained(
     result.transform = options.useLocalProjectionSeed ?
         localProjectionSeed(reference, moving, pivot, initial, span, mm,
                             options.cancellation) : initial;
+    if (options.useLocalProjectionSeed)
+        result.transform = seedVerticalTranslation(reference, moving,
+            result.transform, mm, options.cancellation);
 #ifdef TZF_REGISTRATION_DEBUG
     std::fprintf(stderr, "refine seed=%.3f,%.3f,%.3f,%.3f\n",
                  result.transform[0], result.transform[1], result.transform[2],

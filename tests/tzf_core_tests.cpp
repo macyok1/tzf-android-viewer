@@ -5,6 +5,7 @@
 
 #include <array>
 #include <cassert>
+#include <cstdlib>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
@@ -81,19 +82,27 @@ std::filesystem::path writeRegistrationFixture(bool finite = true) {
 } // namespace
 
 int main() {
+#ifdef _WIN32
+    _set_error_mode(_OUT_TO_STDERR);
+    _set_abort_behavior(0, _WRITE_ABORT_MSG | _CALL_REPORTFAULT);
+#endif
     {
         const auto registrationPath = writeRegistrationFixture();
-        tzf::BinaryFile registrationFile(registrationPath);
-        const auto registration = tzf::parseRegistrationInformation(
-            registrationFile, 64);
-        assert(registration.valid);
-        assert(std::abs(registration.translation[0] - 1500.0) < 1e-9);
-        assert(std::abs(registration.yawDegrees - (-177.364)) < 0.01);
+        {
+            tzf::BinaryFile registrationFile(registrationPath);
+            const auto registration = tzf::parseRegistrationInformation(
+                registrationFile, 64);
+            assert(registration.valid);
+            assert(std::abs(registration.translation[0] - 1500.0) < 1e-9);
+            assert(std::abs(registration.yawDegrees - (-177.364)) < 0.01);
+        }
         std::filesystem::remove(registrationPath);
 
         const auto invalidPath = writeRegistrationFixture(false);
-        tzf::BinaryFile invalidFile(invalidPath);
-        assert(!tzf::parseRegistrationInformation(invalidFile, 64).valid);
+        {
+            tzf::BinaryFile invalidFile(invalidPath);
+            assert(!tzf::parseRegistrationInformation(invalidFile, 64).valid);
+        }
         std::filesystem::remove(invalidPath);
     }
 
@@ -129,6 +138,7 @@ int main() {
     assert(rowRestored == rowExpected);
 
     const auto path = writeFixture();
+    {
     tzf::BinaryFile file(path);
     const auto directory = tzf::parseBlockDirectory(file, 16);
 
@@ -303,6 +313,7 @@ int main() {
     assert(inconsistent.reason == "inconsistent pose graph");
     assert(inconsistent.poses == graphInitial);
 
+    }
     std::filesystem::remove(path);
     return 0;
 }

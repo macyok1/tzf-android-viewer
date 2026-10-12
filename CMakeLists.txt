@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.22)
 project(tzf_tools LANGUAGES CXX)
 
-add_library(tzf-core STATIC app/src/main/cpp/tzf_core.cpp app/src/main/cpp/tzf_geometry.cpp app/src/main/cpp/tzf_pose_graph.cpp app/src/main/cpp/tzf_registration.cpp)
+add_library(tzf-core STATIC app/src/main/cpp/tzf_core.cpp app/src/main/cpp/tzf_geometry.cpp app/src/main/cpp/tzf_pose_graph.cpp app/src/main/cpp/tzf_registration.cpp app/src/main/cpp/tzf_vertical_seed.cpp)
 target_include_directories(tzf-core PUBLIC app/src/main/cpp)
 target_compile_features(tzf-core PUBLIC cxx_std_20)
 
@@ -23,4 +23,7 @@ if(BUILD_TESTING)
     add_executable(tzf-core-tests tests/tzf_core_tests.cpp)
     target_link_libraries(tzf-core-tests PRIVATE tzf-core)
     add_test(NAME tzf-core-tests COMMAND tzf-core-tests)
+    add_executable(tzf-vertical-registration-tests tests/tzf_vertical_registration_tests.cpp)
+    target_link_libraries(tzf-vertical-registration-tests PRIVATE tzf-core)
+    add_test(NAME tzf-vertical-registration-tests COMMAND tzf-vertical-registration-tests)
 endif()

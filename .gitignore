@@ -3,6 +3,7 @@
 .superpowers/
 local.properties
 build/
+/build-host/
 app/build/
 *.iml
 testdata/
