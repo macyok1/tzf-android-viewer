@@ -28,3 +28,7 @@ Final QA after the ambiguity guard: CTest 2/2 passed in 45 seconds, with asserti
 
 ## Limits
 APK/device and real scan-pair validation are pending. A real TZF header was read, but pair refinement from an unknown zero pose was stopped without a result. Search is +/-2 m around supplied Z; configured local correction limits still apply. Geometry without distinctive vertical structure remains ambiguous. Roll/pitch and a new acceptance gate for such geometry are outside this fix.
+
+## Nightly publication follow-up
+User requested publishing through nightly. Run 38260674457 failed before compilation: setup-android v3 defaults to `tools platform-tools`, but sdkmanager no longer finds `tools`. Explicitly request `platform-tools`, keep setup-android license acceptance, and remove the redundant `yes | sdkmanager --licenses` command. Acceptance: Android/JVM/native CI tests, signed APK and nightly manifest publication succeed; verify manifest version and APK checksum.
+- [ ] TSK-004: Repair SDK package setup and verify nightly publication.
