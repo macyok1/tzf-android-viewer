@@ -2,7 +2,7 @@
 
 **Type:** Bug Fix  
 **Date:** 2026-10-12  
-**Status:** Implemented; native QA passed; device verification pending
+**Status:** Implemented; Android/native CI passed; nightly 0.2.106 published; device verification pending
 
 ## What / Why
 Manual placement aligns XY and yaw, but registration must also recover a different scanner height. The local projection seed searches only X, Y and yaw; Z is left to nearest-neighbour ICP. Global Z initialization uses mean heights inside XY columns, mixing floors and walls. Existing tests cover only a 20 mm initial Z error.
@@ -27,8 +27,10 @@ Baseline accepted +/-0.8 m height errors at Z~0 in both metres and millimetres: 
 Final QA after the ambiguity guard: CTest 2/2 passed in 45 seconds, with assertions enabled. Core tests and height regressions (+/-0.8 m, -0.47 m, +0.83 m, zero, density mismatch, cancellation and correction limits) pass. `git diff --check` is clean.
 
 ## Limits
-APK/device and real scan-pair validation are pending. A real TZF header was read, but pair refinement from an unknown zero pose was stopped without a result. Search is +/-2 m around supplied Z; configured local correction limits still apply. Geometry without distinctive vertical structure remains ambiguous. Roll/pitch and a new acceptance gate for such geometry are outside this fix.
+Device and real scan-pair validation are pending. A real TZF header was read, but pair refinement from an unknown zero pose was stopped without a result. Search is +/-2 m around supplied Z; configured local correction limits still apply. Geometry without distinctive vertical structure remains ambiguous. Roll/pitch and a new acceptance gate for such geometry are outside this fix.
 
 ## Nightly publication follow-up
 User requested publishing through nightly. Run 38260674457 failed before compilation: setup-android v3 defaults to `tools platform-tools`, but sdkmanager no longer finds `tools`. Explicitly request `platform-tools`, keep setup-android license acceptance, and remove the redundant `yes | sdkmanager --licenses` command. Acceptance: Android/JVM/native CI tests, signed APK and nightly manifest publication succeed; verify manifest version and APK checksum.
-- [ ] TSK-004: Repair SDK package setup and verify nightly publication.
+- [x] TSK-004: Repair SDK package setup and verify nightly publication.
+
+Run https://github.com/macyok1/tzf-android-viewer/actions/runs/38260848207 succeeded for source commit 336fccd: Android unit tests, debug APK, portable core tests, signed release APK and nightly publication. Downloaded nightly versionCode 106 / versionName 0.2.106; APK SHA-256 equals manifest: `11fe489656e839a63754d12a639f8a706a9bcc686398e4cdecc34b91238f8e6b`.
